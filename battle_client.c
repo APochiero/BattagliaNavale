@@ -36,17 +36,17 @@ int main( int  argc, char** argv) {
 	}
 
     int ret, sd, server_port;
-    struct sockaddr_in server_addr, my_addr;
+    struct sockaddr_in server_addr;
 
     memset( &server_addr, 0, sizeof( server_addr ));
-    memset( &my_addr, 0, sizeof( my_addr ));
    
-    server_port = atoi(argv[2]);
-    server_addr.sin_family = AF_INET;
+	sd = socket( AF_INET, SOCK_STREAM, 0 ); 
+	server_port = atoi(argv[2]);
+  	printf( "[DEBUG] porta server %d \n",  server_port);
+	server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons( server_port );
     inet_pton( AF_INET, argv[1], &server_addr.sin_addr );
-  
-    sd = 0;
+
     ret = connect( sd, (struct sockaddr* ) &server_addr, sizeof( server_addr ));
     if ( ret == -1 ) {
         perror( "[ERRORE] Connessione al server \n");
@@ -54,9 +54,6 @@ int main( int  argc, char** argv) {
     }
         
     printf( "[INFO] Connessone al server %s ( porta %d ) avvenuta con successo \n", argv[1], server_port );
-
-
-    
 
     return 0;
 }
