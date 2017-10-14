@@ -22,7 +22,7 @@ struct client_t {
 };
 
 const char* ip_addr = "127.0.0.1";
-struct client_t* clients;
+struct client_t* clients = NULL;
 int n_clients = 0;
 char n_bytes_buff[4];
 char* cmd_buffer;
@@ -120,62 +120,69 @@ int main( int argc, char** argv ) {
 		read_fds = master;
 		select( fdmax + 1, &read_fds, NULL, NULL, NULL );
 		for ( i = 0; i <= fdmax; i++ ) {
-			printf( "[DEBUG] %d \n", i ); 
+	//		printf( "[DEBUG] %d \n", i ); 
 			if ( FD_ISSET( i, &read_fds ) ) {
-	//			for ( client_i = clients; client_i->next != NULL; client_i = client_i->next ) {
-	//				if ( i == client_i->fd ) {
-	//					recv_cmd(client_i->fd);				
-	//					cmd_id = extract_int(4,0);					
-	//				    switch( cmd_id ) {
-	//						case 0:
-	//								username_size = extract_int(4,4);
-	//								char* username = malloc( username_size );
-	//								extract_username( username_size, username );
-	//								printf("[DEBUG] username %s \n", username ); 
-	//								if ( check_user_presence( username ) == 1 ) {
-	//									// invia errore gia' registrato 
-	//									break;
-	//								}
-	//								client_i->username = username;
-	//								client_i->portUDP = extract_int(16, 8 + username_size );
-	//								printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
-
-	//								
-	//								/*# estrai dimensione username 
-	//								 *# estrai username 
-	//								 *# verifica username non registrata 
-	//								 *# client_i->username = username estratta
-	//								 *# client_i->portUDP = estrai portaUDP
-	//								 * invia al client conferma registrazione */ break;
-	//						case 1: 
-	//								
-	//							/* !help  invia stringa con i comandi */ break;
-	//						case 2: 
-	//							/* !who   inviare array string con username dei client */ break;
-	//						case 3:
-	//							/* !connect username 
-	//							 * ricevi dimensione username
-	//							 * estrai username
-	//							 * verifica presenza e disponibilita' a giocare di username
-	//							 * invia a username la richiesta di giocare da parte di client_i->username
-	//							 * se accetta inviare a client_i la conferma 
-	//							 *
-	//							 */ break;
-	//					}
-	//		   		}
-	//		   	}
+				if ( clients != NULL ) {
+					for ( client_i = clients; client_i->next != NULL; client_i = client_i->next ) {
+						printf("[DEBUG] da non visualizzare " );
+						if ( i == client_i->fd ) {
+							recv_cmd(client_i->fd);				
+							cmd_id = extract_int(4,0);					
+						    switch( cmd_id ) {
+								case 0:
+										username_size = extract_int(4,4);
+										char* username = malloc( username_size );
+										extract_username( username_size, username );
+										printf("[DEBUG] username %s \n", username ); 
+										if ( check_user_presence( username ) == 1 ) {
+											// invia errore gia' registrato 
+											break;
+										}
+										client_i->username = username;
+										client_i->portUDP = extract_int(16, 8 + username_size );
+										printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
+										break;
+																		
+		//								/*# estrai dimensione username 
+		//								 *# estrai username 
+		//								 *# verifica username non registrata 
+		//								 *# client_i->username = username estratta
+		//								 *# client_i->portUDP = estrai portaUDP
+		//								 * invia al client conferma registrazione */ break;
+		//						case 1: 
+		//								
+		//							/* !help  invia stringa con i comandi */ break;
+		//						case 2: 
+		//							/* !who   inviare array string con username dei client */ break;
+		//						case 3:
+		//							/* !connect username 
+		//							 * ricevi dimensione username
+		//							 * estrai username
+		//							 * verifica presenza e disponibilita' a giocare di username
+		//							 * invia a username la richiesta di giocare da parte di client_i->username
+		//							 * se accetta inviare a client_i la conferma 
+		//							 *
+		//							 */ break;
+							}
+				   		}
+				   	}
+				}
 				if ( i == listener ) {
 					struct client_t* new_client= (struct client_t*) malloc( sizeof(struct client_t));
 					if ( new_client == NULL ) 
 						printf( "[ERRORE] Memoria insufficiente, impossibile gestire un nuovo cliente " );
-					add_client( new_client ); 
 					addrlen = sizeof(struct sockaddr_in);
 					new_client->fd = accept( listener, ( struct sockaddr * ) &new_client->addr, &addrlen );
+					new_client->username = NULL;
+					new_client->portUDP = 0;
 					new_client->ingame = 0;
+					new_client->next = NULL;
+					
+					add_client(new_client);
 					FD_SET( new_client->fd, &master);
 					if ( new_client->fd > fdmax )
 						fdmax = new_client->fd;
-					
+					printf( "[INFO] Nuovo utente registrato ");
 				}
 			}
         }
