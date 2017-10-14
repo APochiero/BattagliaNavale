@@ -1,7 +1,6 @@
 // battle_client.c
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/unistd.h>
@@ -9,6 +8,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define PORT_SIZE 	 16
 #define CMD_ID_SIZE  4
@@ -24,11 +24,12 @@ unsigned enemy_hits;
 
 char* cmd_buffer;
 
-int set_packet( int cmd_id, char* username, int portUDP ) {
+int set_buffer( int cmd_id, char* username, int portUDP ) {
 	int ret = 0; 
 	if ( username == NULL ) {
 		cmd_buffer = malloc(CMD_ID_SIZE);
-		itoa(cmd_id, cmd_buffer, 10);
+	    sprintf( cmd_buffer,"%d",cmd_id );
+        //itoa(cmd_id, cmd_buffer, 10);
 		ret = CMD_ID_SIZE;
 	} else {
 		int username_size = strlen(username) + 1;
@@ -38,10 +39,11 @@ int set_packet( int cmd_id, char* username, int portUDP ) {
 		} else {
 			ret = CMD_ID_SIZE + strlen(username) + 1 + PORT_SIZE;
 			cmd_buffer = malloc(ret);	
-			itoa( portUDP, cmd_buffer + CMD_ID_SIZE + username_size );
+			sprintf( cmd_buffer + CMD_ID_SIZE + username_size, "%d", portUDP );
 		}
-		strcpy( cmd_buffer + CMD_ID_SIZE, username, username_size );
+		strncpy( cmd_buffer + CMD_ID_SIZE, username, username_size );
 	}
+    printf( "[DEBUG] bytes da inviare %d \n", ret );
 	return ret;
 }	
 
@@ -55,7 +57,7 @@ void send_cmd( int server_d, int* size ) {
 
 	ret = send( server_d, (void*) cmd_buffer, *(size), 0 );
 	if ( ret < *(size) ) {
-		pritf( "[ERRORE] Invio comando \n" );
+		printf( "[ERRORE] Invio comando \n" );
 		return;
 	}
 	free( cmd_buffer );
@@ -101,11 +103,10 @@ int main( int  argc, char** argv) {
 	printf( "Inserisci il tuo nome: " );
 	scanf( "%s" , username );
 	printf( "Inserisci la porta UDP di ascolto: ");
-	scanf( "%d", portUDP );
+	scanf( "%d", &portUDP );
 	
 	ret = set_buffer( 0, username, portUDP );
-	
-	send_command( server_d, &ret );
+	send_cmd( server_d, &ret );
 
     return 0;
 }
