@@ -24,42 +24,47 @@ unsigned enemy_hits;
 
 char* cmd_buffer;
 
-int set_buffer( int cmd_id, char* username, int portUDP ) {
-	int ret = 0; 
-	if ( username == NULL ) {
-		cmd_buffer = malloc(CMD_ID_SIZE);
-	    sprintf( cmd_buffer,"%d",cmd_id );
-        //itoa(cmd_id, cmd_buffer, 10);
-		ret = CMD_ID_SIZE;
-	} else {
-		int username_size = strlen(username) + 1;
-		if ( portUDP == -1 ) {
-			ret = CMD_ID_SIZE + strlen(username) + 1;
-			cmd_buffer = malloc(ret);
-		} else {
-			ret = CMD_ID_SIZE + strlen(username) + 1 + PORT_SIZE;
-			cmd_buffer = malloc(ret);	
-			sprintf( cmd_buffer + CMD_ID_SIZE + username_size, "%d", portUDP );
-		}
-		strncpy( cmd_buffer + CMD_ID_SIZE, username, username_size );
+int set_buffer( int32_t cmd_id, char* username, int16_t portUDP ) {
+	int ret = sizeof(uint32_t);
+	int user_size;
+	char id[4];
+	char user_s[4];
+	char port[2];
+
+	sprintf( id, "%d", cmd_id);
+	if ( username != NULL ) {
+		user_size = strlen(username) + 1 ;
+		ret += user_size + sizeof(int32_t);
+		sprintf( user_s, "%d", user_size ); 
 	}
-    printf( "[DEBUG] bytes da inviare %d \n", ret );
+	if ( portUDP > 0 ) {
+		ret += sizeof(int16_t);
+		sprintf( port, "%d", portUDP );
+	}
+	cmd_buffer = malloc( ret );
+    strcat( cmd_buffer, id );
+	strcat( cmd_buffer, user_s);
+	strcat( cmd_buffer, username);
+	strcat( cmd_buffer, port );
+	printf( "[DEBUG] cmd_buffer %s \n", cmd_buffer );
 	return ret;
 }	
 
 void send_cmd( int server_d, int* size ) {
 	int ret;
-	ret = send( server_d, (void*) size, sizeof(int), 0 );
-	if ( ret < sizeof(size) ) {
+	ret = send( server_d, (void*) size, sizeof(uint32_t), 0 ); //invio dimensione pacchetto
+	if ( ret < sizeof(uint32_t) ) {
 		printf("[ERRORE] Invio dimensione comando \n");
 		return;
 	}
-
-	ret = send( server_d, (void*) cmd_buffer, *(size), 0 );
+	int s = *(size);
+	printf("[DEBUG] bytes da inviare %d \n", s);
+	ret = send( server_d, (void*) cmd_buffer, s, 0 );
 	if ( ret < *(size) ) {
 		printf( "[ERRORE] Invio comando \n" );
 		return;
 	}
+	printf( "[DEBUG] bytes inviati %d \n", ret );
 	free( cmd_buffer );
 }
 

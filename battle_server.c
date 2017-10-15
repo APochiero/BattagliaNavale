@@ -24,23 +24,17 @@ struct client_t {
 const char* ip_addr = "127.0.0.1";
 struct client_t* clients = NULL;
 int n_clients = 0;
-int* size_buff;
+char* size_buff;
 char* cmd_buffer;
 
-void add_client( struct client_t* new_client ) {
-    new_client->next = clients->next;
-    clients->next = clients;
-    n_clients++;
-}
-
 int extract_int( int size, int offset ) {
-	char tmp[size + 1 ];
+	char tmp[size + 1];
 	int i;
 	for ( i = 0; i < size; i++ )
 		tmp[i] = cmd_buffer[i+offset];
 	tmp[size + 1] = '\0';
     int ret = atoi(tmp);
-    printf( "[DEBUG] dimensione comando estratta %d\n", ret );
+    printf( "[DEBUG] intero estratto %d\n", ret );
     return ret;
 }
 
@@ -71,20 +65,19 @@ void print_clients() {
 }
 
 int recv_cmd(int fd) {
-	int ret, len, cmd_size;
-    ret = recv( fd, size_buff, 4, 0 );
-//	if ( ret < 4) {
-//		printf("[ERRORE] ricezione dimensione comando\n");
-//    	return -1;
-//	}
-	cmd_size = *(size_buff);
+	int ret, cmd_size;
+	size_buff = (char*) &cmd_size;
+	if ( recv( fd, size_buff, sizeof(cmd_size), 0 ) < 0 ) {
+		printf("[ERRORE] ricezione dimensione comando \n");
+    	return -1;
+	}
+	printf("[DEBUG] ricezione dimensione comando ok\n");
 	cmd_buffer = malloc( cmd_size );
-	len = sizeof(cmd_buffer);
     printf("[DEBUG] bytes attesi %d \n", cmd_size );
-	ret = recv( fd, cmd_buffer, len, 0);
-
-    if ( ret < cmd_size ) {
-		printf("[ERRORE] Bytes ricevuti insufficienti per il comando scelto\n");
+	ret = recv( fd, cmd_buffer, cmd_size, 0);
+	printf("[DEBUG] cmd_buffer %s\n", cmd_buffer );
+    if ( ret < 0 ) {
+		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
 		return -1;
 	}
     return 0;
@@ -145,17 +138,18 @@ int main( int argc, char** argv ) {
 						printf( "[ERRORE] Memoria insufficiente, impossibile gestire un nuovo cliente \n" );
 					addrlen = sizeof(struct sockaddr_in);
 					new_client->fd = accept( listener, ( struct sockaddr * ) &new_client->addr, &addrlen );
-					new_client->username = "dummy_username" ;
+					new_client->username = NULL;
 					new_client->portUDP = 0;
 					new_client->ingame = 0;
-					new_client->next = NULL;
-					
-					add_client(new_client);
+					new_client->next = clients;
+   					clients = new_client;
+ 					n_clients++;				
+				
 					FD_SET( new_client->fd, &master);
 					if ( new_client->fd > fdmax )
 						fdmax = new_client->fd;
 					printf( "[INFO] Nuovo utente registrato \n");
-                    printf( "[DEBUG] Nuovo fd %d\n", new_client->fd );
+                    printf( "[DEBUG] Nuovo fd %d, fdmax %d \n", new_client->fd, fdmax );
                 }
                 if ( clients != NULL ) {
                     for ( client_i = clients; client_i->next != NULL; client_i = client_i->next ) {
