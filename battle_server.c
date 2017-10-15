@@ -27,28 +27,22 @@ int n_clients = 0;
 char* size_buff;
 char* cmd_buffer;
 
-int extract_int( int size, int offset ) {
-	char tmp[size + 1];
-	int i;
-	for ( i = 0; i < size; i++ )
-		tmp[i] = cmd_buffer[i+offset];
-	tmp[size + 1] = '\0';
-    int ret = atoi(tmp);
-    printf( "[DEBUG] intero estratto %d\n", ret );
-    return ret;
-}
-
-void extract_username( int size, char* username ) {
-	int i;
-	for ( i = 0; i < 4; i++ ) 
-		username[i] = cmd_buffer[ i + 8 ]; // 4 bytes per cmd_id e 4 per username_size
+int extract_int( int offset ) {
+    int tmp; 
+	void* pointer = (void*) &tmp;
+	memcpy( pointer, cmd_buffer + offset, sizeof(uint32_t) );
+    printf( "[DEBUG] intero estratto %d\n", tmp );
+    return tmp;
 }
 
 int check_user_presence( char* username ) {
 	struct client_t* tmp;
-	for ( tmp = clients; tmp->next != NULL; tmp = tmp->next ) 
-		if ( strcmp( tmp->username, username ) == 0 )
+	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
+		if ( strcmp( tmp->username, username ) == 0 ) {
+			printf( "[DEBUG] utente gia' registato \n");
 			return 1;
+		}
+	}
 	return 0;
 }
 
@@ -64,6 +58,25 @@ void print_clients() {
     }
 }
 
+
+void send_response( int client_fd, int* size ) {
+	int ret;
+	ret = send( client_fd, (void*) size, sizeof(uint32_t), 0 ); //invio dimensione pacchetto
+	if ( ret < sizeof(uint32_t) ) {
+		printf("[ERRORE] Invio dimensione comando \n");
+		return;
+	}
+	int s = *(size);
+	printf("[DEBUG] bytes da inviare %d \n", s);
+	ret = send( client_fd, (void*) cmd_buffer, s, 0 );
+	if ( ret < *(size) ) {
+		printf( "[ERRORE] Invio comando \n" );
+		return;
+	}
+	printf( "[DEBUG] bytes inviati %d \n", ret );
+	free( cmd_buffer );
+}
+
 int recv_cmd(int fd) {
 	int ret, cmd_size;
 	size_buff = (char*) &cmd_size;
@@ -71,11 +84,9 @@ int recv_cmd(int fd) {
 		printf("[ERRORE] ricezione dimensione comando \n");
     	return -1;
 	}
-	printf("[DEBUG] ricezione dimensione comando ok\n");
 	cmd_buffer = malloc( cmd_size );
     printf("[DEBUG] bytes attesi %d \n", cmd_size );
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
-	printf("[DEBUG] cmd_buffer %s\n", cmd_buffer );
     if ( ret < 0 ) {
 		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
 		return -1;
@@ -138,7 +149,7 @@ int main( int argc, char** argv ) {
 						printf( "[ERRORE] Memoria insufficiente, impossibile gestire un nuovo cliente \n" );
 					addrlen = sizeof(struct sockaddr_in);
 					new_client->fd = accept( listener, ( struct sockaddr * ) &new_client->addr, &addrlen );
-					new_client->username = NULL;
+					new_client->username = "";
 					new_client->portUDP = 0;
 					new_client->ingame = 0;
 					new_client->next = clients;
@@ -159,19 +170,19 @@ int main( int argc, char** argv ) {
 							if ( ret == -1 )
                                 break;
 
-                            cmd_id = extract_int(4,0);					
+                            cmd_id = extract_int(0);					
 						    switch( cmd_id ) {
 								case 0:
-									username_size = extract_int(4,4);
+									username_size = extract_int(4);
 									char* username = malloc( username_size );
-									extract_username( username_size, username );
-						            printf("[DEBUG] username %s \n", username ); 
+									memcpy( username, cmd_buffer + 8, username_size);
+									client_i->portUDP = extract_int(8 + username_size );
+									printf("[DEBUG] username %s \n", username ); 
 									if ( check_user_presence( username ) == 1 ) {
 										// invia errore gia' registrato 
 										break;
 									}
-									client_i->username = username;
-									client_i->portUDP = extract_int(16, 8 + username_size );
+						        	client_i->username = username;
 									printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
 									break;
 																	

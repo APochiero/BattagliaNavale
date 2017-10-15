@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define 
 #define PORT_SIZE 	 16
 #define CMD_ID_SIZE  4
 #define N_ROWS	  	 6
@@ -23,30 +24,31 @@ enum cell_t  my_grid[N_ROWS][N_COLUMNS];
 unsigned enemy_hits;
 
 char* cmd_buffer;
+char* buff_pointer;
 
-int set_buffer( int32_t cmd_id, char* username, int16_t portUDP ) {
+void insert_buff( void* src, int n ) {
+	memcpy( buff_pointer, src, n );
+	buff_pointer += n;
+}
+
+int set_buffer( int* cmd_id, char* username, int* portUDP ) {
 	int ret = sizeof(uint32_t);
-	int user_size;
-	char id[4];
-	char user_s[4];
-	char port[2];
+	int user_size = 0;
 
-	sprintf( id, "%d", cmd_id);
 	if ( username != NULL ) {
 		user_size = strlen(username) + 1 ;
-		ret += user_size + sizeof(int32_t);
-		sprintf( user_s, "%d", user_size ); 
+		ret += user_size + sizeof(uint32_t);
 	}
-	if ( portUDP > 0 ) {
-		ret += sizeof(int16_t);
-		sprintf( port, "%d", portUDP );
-	}
+	if ( portUDP != NULL ) 
+		ret += sizeof(int32_t);
 	cmd_buffer = malloc( ret );
-    strcat( cmd_buffer, id );
-	strcat( cmd_buffer, user_s);
-	strcat( cmd_buffer, username);
-	strcat( cmd_buffer, port );
-	printf( "[DEBUG] cmd_buffer %s \n", cmd_buffer );
+	buff_pointer = cmd_buffer;
+	insert_buff( cmd_id, sizeof(uint32_t)); 
+	insert_buff( &user_size, sizeof(uint32_t));
+	insert_buff( username, user_size );
+	insert_buff( portUDP, sizeof(uint32_t));
+
+	printf( "[DEBUG] cmd_buffer %x - %x\n", (unsigned int) cmd_buffer[0], (unsigned int) cmd_buffer[4]  );
 	return ret;
 }	
 
@@ -84,7 +86,7 @@ int main( int  argc, char** argv) {
 		exit(1);
 	}
 
-    int portUDP, ret, server_d, server_port;
+    int cmd_id, portUDP, ret, server_d, server_port;
 	char username[30];
 	struct sockaddr_in server_addr;
 
@@ -109,9 +111,11 @@ int main( int  argc, char** argv) {
 	scanf( "%s" , username );
 	printf( "Inserisci la porta UDP di ascolto: ");
 	scanf( "%d", &portUDP );
-	
-	ret = set_buffer( 0, username, portUDP );
+	cmd_id = 0;
+	ret = set_buffer( &cmd_id, username, &portUDP );
 	send_cmd( server_d, &ret );
-
+	
+	recv_response( server_d );
+	
     return 0;
 }
