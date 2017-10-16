@@ -31,7 +31,7 @@ int extract_int( int offset ) {
     int tmp; 
 	void* pointer = (void*) &tmp;
 	memcpy( pointer, cmd_buffer + offset, sizeof(uint32_t) );
-    printf( "[DEBUG] intero estratto %d\n", tmp );
+ //   printf( "[DEBUG] intero estratto %d\n", tmp );
     return tmp;
 }
 
@@ -58,7 +58,6 @@ void print_clients() {
     }
 }
 
-
 void send_response( int client_fd, int* size ) {
 	int ret;
 	ret = send( client_fd, (void*) size, sizeof(uint32_t), 0 ); //invio dimensione pacchetto
@@ -67,13 +66,13 @@ void send_response( int client_fd, int* size ) {
 		return;
 	}
 	int s = *(size);
-	printf("[DEBUG] bytes da inviare %d \n", s);
+//	printf("[DEBUG] bytes da inviare %d \n", s);
 	ret = send( client_fd, (void*) cmd_buffer, s, 0 );
 	if ( ret < *(size) ) {
 		printf( "[ERRORE] Invio comando \n" );
 		return;
 	}
-	printf( "[DEBUG] bytes inviati %d \n", ret );
+//	printf( "[DEBUG] bytes inviati %d \n", ret );
 	free( cmd_buffer );
 }
 
@@ -85,7 +84,7 @@ int recv_cmd(int fd) {
     	return -1;
 	}
 	cmd_buffer = malloc( cmd_size );
-    printf("[DEBUG] bytes attesi %d \n", cmd_size );
+ //   printf("[DEBUG] bytes attesi %d \n", cmd_size );
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
     if ( ret < 0 ) {
 		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
@@ -114,7 +113,7 @@ int main( int argc, char** argv ) {
 	FD_ZERO(&read_fds);
 
 	port = atoi(argv[1]);
-	printf( "[DEBUG] porta %d\n", port );
+//	printf( "[DEBUG] porta %d\n", port );
 	listener = socket(AF_INET, SOCK_STREAM, 0);
 	
 	memset( &server_addr, 0 ,sizeof( server_addr ) );
@@ -177,13 +176,12 @@ int main( int argc, char** argv ) {
 									char* username = malloc( username_size );
 									memcpy( username, cmd_buffer + 8, username_size);
 									client_i->portUDP = extract_int(8 + username_size );
-									printf("[DEBUG] username %s \n", username ); 
+								//	printf("[DEBUG] username %s \n", username ); 
 									if ( check_user_presence( username ) == 1 ) {
-										// invia errore gia' registrato 
 										break;
 									}
 						        	client_i->username = username;
-									printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
+								//	printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
 									break;
 																	
 		//							/*# estrai dimensione username 
@@ -193,11 +191,8 @@ int main( int argc, char** argv ) {
 		//							 *# client_i->portUDP = estrai portaUDP
 		//							 * invia al client conferma registrazione */ break;
 		//			    		case 1: 
-		//							
-		//							/* !help  invia stringa con i comandi */ break;
-		//				    	case 2: 
 		//		    				/* !who   inviare array string con username dei client */ break;
-		//		   		    	case 3:
+		//		   		    	case 2:
 		//				    		/* !connect username 
 		//	    					 * ricevi dimensione username
 		//							 * estrai username
@@ -206,6 +201,11 @@ int main( int argc, char** argv ) {
 		//							 * se accetta inviare a client_i la conferma 
 		//							 *
 		//							 */ break;
+		//						case 3:
+		//							 !quit 
+		//							  
+		//
+									 
 							}
 				   		}
 				   	}
