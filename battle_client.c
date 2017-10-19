@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #define READ_BUFFER_SIZE 256
 #define STDIN 0
@@ -30,8 +31,27 @@ enum cell_t  enemy_grid[N_ROWS][N_COLUMNS];
 enum cell_t  my_grid[N_ROWS][N_COLUMNS];
 unsigned enemy_hits;
 
+char* size_buff;
 char* cmd_buffer;
 char* buff_pointer;
+fd_set master;
+fd_set read_fds;
+
+void catch_stop( int sig_num ) {
+	signal( SIGINT, catch_stop );
+	printf( " *** Tentativo di interruzione del Client *** \nUsare il comando !quit per un corretto abbandono della connessione\n> ");
+	fflush(stdout);
+}
+
+int extract_int( int offset ) {
+    int tmp; 
+	void* pointer = (void*) &tmp;
+	memcpy( pointer, cmd_buffer + offset, sizeof(int) );
+    printf( "[DEBUG] intero estratto %d\n", tmp );
+    return tmp;
+}
+
+
 
 void insert_buff( void* src, int n ) {
 	memcpy( buff_pointer, src, n );
@@ -80,6 +100,31 @@ void send_cmd( int server_d, int* size ) {
 	free( cmd_buffer );
 }
 
+int recv_response(int fd) {
+	int ret, cmd_size;
+	size_buff = (char*) &cmd_size;
+	ret = recv( fd, size_buff, sizeof(cmd_size), 0 );
+	if ( ret == 0 ) {
+		printf( "[INFO] Disconessione del server %d \n", fd );
+		close(fd);
+		FD_CLR( fd, &master );
+		return -1;
+	} 
+	if ( ret < 0 ) {
+		printf( "[ERRORE] Dimensione comando \n");
+		return -1;
+	}
+	cmd_buffer = malloc( cmd_size );
+    printf("[DEBUG] bytes attesi %d \n", cmd_size );
+	ret = recv( fd, cmd_buffer, cmd_size, 0);
+    if ( ret < 0 ) {
+		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
+		return -1;
+	}
+    return 0;
+}	
+
+
 
 int main( int  argc, char** argv) {
 	if ( argc != 3 ) {
@@ -87,18 +132,17 @@ int main( int  argc, char** argv) {
 		exit(1);
 	}
 
-    int i, fdmax, cmd_id, portUDP, ret, server_d, server_port;
+    int i, fdmax, cmd_id, portUDP, ret,response_id, list_size, server_d, server_port;
 	char read_buffer[READ_BUFFER_SIZE];
 	char* cmd_name;
 	char* challenged_user;
 	const char delimiter[2] = " ";
 	struct sockaddr_in server_addr;
-	fd_set master;
-	fd_set read_fds;
-
+	
 	FD_ZERO(&master);
 	FD_ZERO(&read_fds);
 
+	signal( SIGINT, catch_stop );
     memset( &server_addr, 0, sizeof( server_addr ));
    
 	server_d = socket( AF_INET, SOCK_STREAM, 0 ); 
@@ -117,14 +161,20 @@ int main( int  argc, char** argv) {
 	fdmax = server_d;
     printf( "[INFO] Connessone al server %s ( porta %d ) avvenuta con successo \n\n%s", argv[1], server_port, HELP_MSG );
 	
-
-	printf( "Inserisci il tuo nome: " );
-	scanf( "%s" , read_buffer );
-	printf( "Inserisci la porta UDP di ascolto: ");
-	scanf( "%d", &portUDP );
-	cmd_id = 0;
-	ret = set_buffer( &cmd_id, read_buffer, &portUDP );
-	send_cmd( server_d, &ret );
+	do {
+		if ( ret == -1 )
+			printf( "Username gia' presente nel server \n");
+		printf( "Inserisci il tuo nome: " );
+		scanf( "%s" , read_buffer );
+		printf( "Inserisci la porta UDP di ascolto: ");
+		scanf( "%d", &portUDP );
+		cmd_id = 0;
+		ret = set_buffer( &cmd_id, read_buffer, &portUDP );
+		send_cmd( server_d, &ret );
+		recv_response( server_d );
+		ret = extract_int(0);
+		printf( "[DEBUG] risposta registrazione %d \n", ret );
+	} while ( ret == -1 );
 
 	for(;;) {
 		read_fds = master;
@@ -140,6 +190,11 @@ int main( int  argc, char** argv) {
 					cmd_name = strtok( read_buffer, delimiter);	
 					if ( cmd_name == '\0' )
 						break;
+					if ( strcmp( cmd_name, QUIT ) == 0 ) {
+						printf( "[INFO] Disconnessione dal server \n" );
+						close( server_d );
+						return 0;
+					} 
 					if ( strcmp( cmd_name, HELP ) == 0 ) {
 						printf ( "%s>", HELP_MSG );
 						fflush(stdout);
@@ -151,10 +206,8 @@ int main( int  argc, char** argv) {
 					} else if ( strcmp( cmd_name, CONNECT ) == 0 ) {
 						cmd_id = 2;
 						challenged_user = strtok( NULL, delimiter );
+						printf( "username avversario %s \n", challenged_user );
 						ret = set_buffer( &cmd_id, challenged_user, NULL ); 
-					} else if ( strcmp( cmd_name, QUIT ) == 0 ) {
-						cmd_id = 3;
-						ret = set_buffer( &cmd_id, NULL, NULL ); 
 					} else {
 						printf("Comando non riconosciuto \n> " );
 						fflush(stdout);
@@ -168,6 +221,20 @@ int main( int  argc, char** argv) {
 				}
 				if ( i == server_d ) {
 					printf( "[DEBUG] server socket pronto \n");
+					ret = recv_response( server_d );
+					if ( ret == -1 )
+						break;
+
+					response_id = extract_int(0);
+					switch( response_id ) {
+						case 1: // risposta al comando !who contenente la lista di client connnessi
+							list_size = extract_int(4);
+							char* list = malloc(list_size);
+							memcpy( list, cmd_buffer + 8, list_size);
+							printf( " Client connessi al server: \n %s", list);
+							fflush(stdout); 
+							break;
+					}
 				}
 			}
 		}
