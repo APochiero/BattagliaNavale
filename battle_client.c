@@ -47,7 +47,7 @@ int extract_int( int offset ) {
     int tmp; 
 	void* pointer = (void*) &tmp;
 	memcpy( pointer, cmd_buffer + offset, sizeof(int) );
-    printf( "[DEBUG] intero estratto %d\n", tmp );
+ //   printf( "[DEBUG] intero estratto %d\n", tmp );
     return tmp;
 }
 
@@ -58,7 +58,7 @@ void insert_buff( void* src, int n ) {
 	buff_pointer += n;
 }
 
-int set_buffer( int* cmd_id, char* username, int* portUDP ) {
+int set_pkt( int* cmd_id, char* username, int* portUDP ) {
 	int ret = sizeof(int);
 	int user_size = 0;
 
@@ -95,9 +95,7 @@ void send_cmd( int server_d, int* size ) {
 		return;
 	}
 //	printf( "[DEBUG] bytes inviati %d \n", ret );
-	printf( "> " );
-	fflush(stdout);
-	free( cmd_buffer );
+
 }
 
 int recv_response(int fd) {
@@ -114,13 +112,15 @@ int recv_response(int fd) {
 		printf( "[ERRORE] Dimensione comando \n");
 		return -1;
 	}
+//	free( cmd_buffer );
 	cmd_buffer = malloc( cmd_size );
-    printf("[DEBUG] bytes attesi %d \n", cmd_size );
+
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
     if ( ret < 0 ) {
 		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
 		return -1;
 	}
+    printf("[DEBUG] bytes ricevuti %d \n", ret );
     return 0;
 }	
 
@@ -132,10 +132,13 @@ int main( int  argc, char** argv) {
 		exit(1);
 	}
 
-    int i, fdmax, cmd_id, portUDP, ret,response_id, list_size, server_d, server_port;
+    int i, opponent_port, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_d, server_port;
 	char read_buffer[READ_BUFFER_SIZE];
 	char* cmd_name;
 	char* challenged_user;
+	char* challenging_user;
+	char y_n;
+	char opponent_ip[INET_ADDRSTRLEN];
 	const char delimiter[2] = " ";
 	struct sockaddr_in server_addr;
 	
@@ -169,11 +172,13 @@ int main( int  argc, char** argv) {
 		printf( "Inserisci la porta UDP di ascolto: ");
 		scanf( "%d", &portUDP );
 		cmd_id = 0;
-		ret = set_buffer( &cmd_id, read_buffer, &portUDP );
+		ret = set_pkt( &cmd_id, read_buffer, &portUDP );
 		send_cmd( server_d, &ret );
 		recv_response( server_d );
 		ret = extract_int(0);
-		printf( "[DEBUG] risposta registrazione %d \n", ret );
+	//	printf( "[DEBUG] risposta registrazione %d \n", ret );
+		printf( "\n> " );
+		fflush(stdout);
 	} while ( ret == -1 );
 
 	for(;;) {
@@ -181,7 +186,7 @@ int main( int  argc, char** argv) {
 		select( fdmax + 1, &read_fds, NULL, NULL, NULL );
 		for( i = 0; i <= fdmax; i++ ) {
 			if ( FD_ISSET( i, &read_fds ) ) {
-				printf( "[DEBUG] fd pronto %d \n", i );
+			//	printf( "[DEBUG] fd pronto %d \n", i );
 				if ( i == STDIN ) {
 					fgets( read_buffer, READ_BUFFER_SIZE, stdin );
 					char *rmv_newline = strchr( read_buffer, '\n');
@@ -196,45 +201,75 @@ int main( int  argc, char** argv) {
 						return 0;
 					} 
 					if ( strcmp( cmd_name, HELP ) == 0 ) {
-						printf ( "%s>", HELP_MSG );
+						printf ( "%s> ", HELP_MSG );
 						fflush(stdout);
 						break;
 					}
 					if ( strcmp( cmd_name, WHO ) == 0 ) {
 						cmd_id = 1;
-						ret = set_buffer( &cmd_id, NULL, NULL ); 
+						ret = set_pkt( &cmd_id, NULL, NULL ); 
 					} else if ( strcmp( cmd_name, CONNECT ) == 0 ) {
 						cmd_id = 2;
 						challenged_user = strtok( NULL, delimiter );
+						if ( challenged_user == NULL ) {
+							printf( "Uso: !connect <username> \n> ");
+							break;
+						}
 						printf( "username avversario %s \n", challenged_user );
-						ret = set_buffer( &cmd_id, challenged_user, NULL ); 
+						ret = set_pkt( &cmd_id, challenged_user, NULL ); 
 					} else {
 						printf("Comando non riconosciuto \n> " );
 						fflush(stdout);
 						break;
 					}
 		
-					printf("[DEBUG] Richiesta comando %d \n", cmd_id );
+				//	printf("[DEBUG] Richiesta comando %d \n", cmd_id );
 					send_cmd(server_d, &ret);
-					printf( "> ");
-					fflush(stdout);
 				}
 				if ( i == server_d ) {
-					printf( "[DEBUG] server socket pronto \n");
+				//	printf( "[DEBUG] server socket pronto \n");
 					ret = recv_response( server_d );
 					if ( ret == -1 )
 						break;
 
 					response_id = extract_int(0);
-					switch( response_id ) {
+					switch( response_id ) { 
+						case -2: // utente sfidato non esiste 
+							printf( "Il giocatore sfidato non esiste \n> " );
+							break;
+						case -1: // l'utente sfidato ha rifiutato la partita
+							printf( "Il giocatore sfidato ha rifutato la partita \n> " );
+							break;
 						case 1: // risposta al comando !who contenente la lista di client connnessi
 							list_size = extract_int(4);
 							char* list = malloc(list_size);
 							memcpy( list, cmd_buffer + 8, list_size);
-							printf( " Client connessi al server: \n %s", list);
-							fflush(stdout); 
+							printf( "Client connessi al server: %s \n> ", list);
+							break;
+						case 2: // sei stato sfidato 
+							username_size = extract_int(4);
+							challenging_user = malloc(username_size);
+							memcpy( challenging_user, cmd_buffer + 8, username_size );
+							printf( " Sei stato sfidato da %s \n Premere (S) per accettare o (N) per rifiutare: ", challenging_user );
+							do {
+								scanf("%c", &y_n);
+							} while ( y_n != 's' && y_n != 'S' && y_n != 'n' && y_n != 'N' );
+
+							if ( y_n == 's' || y_n == 'S' ) {
+								cmd_id = 3;
+								opponent_port = ( 8 + username_size );
+								printf( "[DEBUG] porta sfidante ricevuta %d \n", opponent_port);
+								memcpy( opponent_ip, cmd_buffer + 16 + username_size, INET_ADDRSTRLEN );
+								//creare un sockaddr dedicato all'avversario
+
+							} else if ( y_n == 'n' || y_n == 'N') {
+								cmd_id = -1; // sfida rifiutata 
+								ret = set_pkt( &cmd_id, challenging_user );
+								send_cmd( server_d, &ret );
+							}
 							break;
 					}
+					fflush(stdout);
 				}
 			}
 		}

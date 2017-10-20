@@ -23,7 +23,9 @@ struct client_t {
 	struct client_t* next;
 };
 
-const char* ip_addr = "127.0.0.1";
+char* ip_addr = "127.0.0.1";
+const char* disponibile = "( disponibile )";
+const char* non_disponibile = "( non disponibile )";
 struct client_t* clients = NULL;
 int n_clients = 0;
 int end = 0;
@@ -35,10 +37,32 @@ char* printed_clients;
 fd_set master;
 fd_set read_fds;
 
+void get_info_client( int fd, char* username, int& port, char* ip ) {
+	struct client_t* tmp;
+	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
+		if ( tmp->fd  == fd ) {
+			strcpy( username, tmp->username );
+			port = tmp->portUDP;
+			inet_ntop( AF_INET, &(tmp->sin_addr), ip, INET_ADDRSTRLEN);	
+		}
+	}
+}
+
+int get_fd( char* username ) {
+	struct client_t* tmp;
+	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
+		if ( strcmp( tmp->username, username ) == 0 ) {
+			printf( "[DEBUG] fd client sfidato trovato %d \n", tmp->fd);
+			return tmp->fd;
+		}
+	}
+	return -1;
+}
+
 void catch_stop( int sig_num ) {
 	signal( SIGINT, catch_stop );
 	printf( " *** SERVER INTERROTTO ***\n" );
-	// for each client send close;
+	// for each client send close
 	close(listener);
 	FD_CLR( listener, &master );
 	end = 1;
@@ -69,20 +93,21 @@ char* print_clients() {
     printf( "[DEBUG] print %d clients \n", n_clients);
 	int string_size = 0;
 	for ( i = clients; i->next != NULL; i = i-> next ) {
-		string_size += strlen( i->username );
+		string_size += strlen( i->username ) + 10; // 
 		if ( i->ingame == 1 )
-			string_size += 21;
+			string_size += strlen( non_disponibile );
 		else
-			string_size += 18;
+			string_size += strlen( disponibile );
 	}
 	printed_clients = malloc(string_size);
 	for ( i = clients; i->next != NULL; i = i->next ) {
+		strcat( printed_clients, "\n ");
        	strcat( printed_clients, i->username );
 		strcat( printed_clients, " ");
         if ( i->ingame ) 
-            strcat(printed_clients, "( non disponibile ) \n");
+            strcat(printed_clients, non_disponibile );
         else 
-            strcat( printed_clients, "( disponibile ) \n");
+            strcat( printed_clients, disponibile );
     }
 	return printed_clients;
 }
@@ -92,16 +117,21 @@ void insert_buff( void* src, int n ) {
 	buff_pointer += n;
 }
 
-int set_buffer( int* response_id, char* string_msg ) {
+int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip_addr ) {
 	int ret = sizeof(int);
 	int string_size = 0;
-	free(cmd_buffer);
+	
 	if ( string_msg != NULL ) {
 		string_size = strlen(string_msg) + 1;
 		ret += string_size + sizeof(int);
 	}
-	buff_pointer = cmd_buffer;
+	if ( portUDP != NULL )
+		ret += sizeof(int);
+
+	if ( ip_addr != NULL )
+		ret += 
 	cmd_buffer = malloc(ret);
+	buff_pointer = cmd_buffer;
 	insert_buff( response_id, sizeof(int));
 	if ( string_msg != NULL ) {
 		insert_buff( &string_size, sizeof(int));
@@ -125,7 +155,7 @@ void send_response( int client_fd, int* size ) {
 		return;
 	}
 	printf( "[DEBUG] bytes inviati %d \n", ret );
-	free( cmd_buffer );
+
 }
 
 int recv_cmd(int fd) {
@@ -143,6 +173,7 @@ int recv_cmd(int fd) {
 		printf( "[ERRORE] Dimensione comando \n");
 		return -1;
 	}
+	//free( cmd_buffer );
 	cmd_buffer = malloc( cmd_size );
     printf("[DEBUG] bytes attesi %d \n", cmd_size );
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
@@ -160,11 +191,12 @@ int main( int argc, char** argv ) {
 		exit(1);
 	}
 
-	int username_size, i, fdmax, port, ret, response_id, cmd_id;
+	int username_size, i, fdmax, port, ret, response_id, cmd_id, challenged_user_fd, challenging_user_fd;
 	struct sockaddr_in server_addr;
     socklen_t addrlen;
     struct client_t* client_i;
-
+	char* username;
+	char ip[INET_ADDRSTRLEN];
 
     clients = (struct client_t*) malloc( sizeof( struct client_t));
    
@@ -204,6 +236,7 @@ int main( int argc, char** argv ) {
 				if ( i == listener ) {
 					if ( end == 1 )
 						return 0;
+					printf( "[DEBUG] listener \n" );
 					struct client_t* new_client = malloc( sizeof(struct client_t));
 					if ( new_client == NULL ) 
 						printf( "[ERRORE] Memoria insufficiente, impossibile gestire un nuovo cliente \n" );
@@ -232,30 +265,55 @@ int main( int argc, char** argv ) {
                                 break;
 
                             cmd_id = extract_int(0);					
-						    switch( cmd_id ) {
-								case 0:
+							if ( strlen( cmd_buffer ) > 4 ) {
 									username_size = extract_int(4);
-									char* username = malloc( username_size );
+									username = malloc( username_size );
 									memcpy( username, cmd_buffer + 8, username_size);
+							}		
+							switch( cmd_id ) {
+								case -1: // l'utente attuale a rifiutato la sfida
+									response_id = -1;
+									ret = set_pkt( &response_id, username );
+									challenging_user_fd = get_fd( username );
+									send_response( challenging_user_fd, &ret );
+									break;
+								case 0: // ricezione username e porta UDP 
 									client_i->portUDP = extract_int(8 + username_size );
-								
 									printf("[DEBUG] username %s \n", username ); 
-									
 									response_id = check_user_presence( username );
 						        	if ( response_id == 0 )
 										client_i->username = username;
 									printf( "[DEBUG] response_id %d\n", response_id);
-									ret = set_buffer( &response_id, NULL );
+									ret = set_pkt( &response_id, NULL );
 									send_response( client_i->fd, &ret ); 
 									printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
 									break;
-						    	case 1: 
+						    	case 1: // !who -  invio lista clienti connessi
 									 response_id = 1;
-									 ret = set_buffer( &response_id, print_clients() );
+									 ret = set_pkt( &response_id, print_clients() );
 									 send_response( client_i->fd, &ret );
 									 break;		    				
-		//		    				/* !who   inviare array string con username dei client */ break;
-		//		   		    	case 3:
+				  		    	case 2: // !connect username
+									response_id = check_user_presence( username );
+									if ( response_id == 0 ) {
+										response_id = -2; //utente non esistente 
+										ret = set_pkt( &response_id, NULL, NULL, NULL );
+										send_response( client_i->fd, &ret );
+										break;
+									}						
+									challenged_user_fd = get_fd( username );
+									free( username );
+									get_info_client( client_i->fd, username, &port, ip );
+									printf( "[DEBUG] username %s, porta %d, ip %s \n", username, port, ip_addr );
+									response_id = 2;
+									ret = set_pkt( &response_id, username, &port, ip );
+									send_response( challenged_user_fd );
+									break;
+								case 3:
+									
+							// trovare fd del client sfidato
+							// formare il pacchetto con { 2, dim username, username, porta, ip }
+									
 		//				    		/* !connect username 
 		//	    					 * ricevi dimensione username
 		//							 * estrai username
