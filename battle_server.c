@@ -24,8 +24,8 @@ struct client_t {
 };
 
 char* ip_addr = "127.0.0.1";
-const char* disponibile = "( disponibile )";
-const char* non_disponibile = "( non disponibile )";
+const char* disponibile = "( libero )";
+const char* non_disponibile = "( in partita )";
 struct client_t* clients = NULL;
 int n_clients = 0;
 int end = 0;
@@ -37,14 +37,42 @@ char* printed_clients;
 fd_set master;
 fd_set read_fds;
 
-void get_info_client( int fd, int* port, char* ip ) {
-	struct client_t* tmp;
-	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
-		if ( tmp->fd  == fd ) {
-			*port = tmp->portUDP;
-			inet_ntop( AF_INET, &(tmp->addr.sin_addr), ip, INET_ADDRSTRLEN);	
+void delete_list() {
+	struct client_t* next;
+	struct client_t* current = clients;
+
+	for( ;current != NULL; current = next ) {	
+		close( current->fd );
+		next = current->next; 
+		free( current );
+	}
+	clients = NULL;
+}
+
+void remove_client( int fd ) {
+	struct client_t* previous = clients;
+	struct client_t* current = clients->next;
+
+	for( ;current != NULL; previous = current, current = current->next ) {	
+		if ( current->fd == fd ) {
+			previous->next = current->next;
+			current->next = NULL;
+			free( current );
+			n_clients--;
+			return;
 		}
 	}
+}
+
+void get_info_client( int fd, int* port, char* ip ) {
+	struct client_t* tmp;
+	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) 
+		if ( tmp->fd == fd ) { 
+			inet_ntop( AF_INET, &(tmp->addr.sin_addr), ip, INET_ADDRSTRLEN);	
+			*(port) = tmp->portUDP;
+			tmp->ingame = 1; // sfidante "in partita"
+			return; 
+		}
 }
 
 int get_fd( char* username ) {
@@ -61,7 +89,7 @@ int get_fd( char* username ) {
 void catch_stop( int sig_num ) {
 	signal( SIGINT, catch_stop );
 	printf( " *** SERVER INTERROTTO ***\n" );
-	// for each client send close
+	delete_list();
 	close(listener);
 	FD_CLR( listener, &master );
 	end = 1;
@@ -87,7 +115,6 @@ int check_user_free ( char* username ) {
 	return 1;
 }
 
-
 int check_user_presence( char* username ) {
 	struct client_t* tmp;
 	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
@@ -104,7 +131,7 @@ char* print_clients() {
     printf( "[DEBUG] print %d clients \n", n_clients);
 	int string_size = 0;
 	for ( i = clients; i->next != NULL; i = i-> next ) {
-		string_size += strlen( i->username ) + 10; // 
+		string_size += strlen( i->username ) + 15; // 
 		if ( i->ingame == 1 )
 			string_size += strlen( non_disponibile );
 		else
@@ -112,7 +139,7 @@ char* print_clients() {
 	}
 	printed_clients = malloc(string_size);
 	for ( i = clients; i->next != NULL; i = i->next ) {
-		strcat( printed_clients, "\n ");
+		strcat( printed_clients, "\n\t");
        	strcat( printed_clients, i->username );
 		strcat( printed_clients, " ");
         if ( i->ingame ) 
@@ -184,7 +211,7 @@ int recv_cmd(int fd) {
 	ret = recv( fd, size_buff, sizeof(cmd_size), 0 );
 	if ( ret == 0 ) {
 		printf( "[INFO] Disconessione del client %d \n", fd );
-		//rimuovi dalla lista 
+		remove_client(fd);
 		close(fd);
 		FD_CLR( fd, &master );
 		return -1;
@@ -290,7 +317,7 @@ int main( int argc, char** argv ) {
 									memcpy( username, cmd_buffer + 8, username_size);
 							}		
 							switch( cmd_id ) {
-								case -1: // l'utente attuale a rifiutato la sfida
+								case -1: // l'utente attuale ha rifiutato la sfida
 									response_id = -1;
 									ret = set_pkt( &response_id, username, NULL, NULL);
 									challenging_user_fd = get_fd( username );
@@ -310,26 +337,35 @@ int main( int argc, char** argv ) {
 									printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
 									break;
 						    	case 1: // !who -  invio lista clienti connessi
-									 response_id = 1;
-									 ret = set_pkt( &response_id, print_clients(), NULL, NULL );
-									 send_response( client_i->fd, &ret );
-									 break;		    				
+									printf( "[DEBUG] client_i stato %d\n", client_i->ingame);
+								    response_id = 1;
+									ret = set_pkt( &response_id, print_clients(), NULL, NULL );
+									send_response( client_i->fd, &ret );
+									break;		    				
 				  		    	case 2: // !connect username
-									response_id = check_user_free( username );
+									response_id = check_user_presence( username );
 									if ( response_id == 0 ) {
-										response_id = -2; //utente non esistente oppure gia' in partita
+										response_id = -3; // utente non esistente
 										ret = set_pkt( &response_id, NULL, NULL, NULL );
 										send_response( client_i->fd, &ret );
 										break;
-									}						
+									}
+									response_id = check_user_free( username );
+									if ( response_id == 0 ) {
+										response_id = -2; //utente gia' in partita
+										ret = set_pkt( &response_id, NULL, NULL, NULL );
+										send_response( client_i->fd, &ret );
+										break;
+									}
 									challenged_user_fd = get_fd( username );
 									response_id = 2;
 									ret = set_pkt( &response_id, client_i->username, NULL, NULL); // invio sfida con il nome dello sfidante
 									send_response( challenged_user_fd, &ret );
 									break;
 								case 3: // sfida accettata
-									get_info_client( challenged_user_fd, &port, ip );
 									challenging_user_fd = get_fd( username );
+									get_info_client( challenging_user_fd, &port, ip );
+									client_i->ingame = 1; //sfidato "in partita"
 									response_id = 3;
 									ret = set_pkt( &response_id, NULL, &port, ip );
 									send_response( challenging_user_fd, &ret );
