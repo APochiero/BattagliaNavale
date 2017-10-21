@@ -30,7 +30,7 @@ enum cell_t  { BUSY, FREE, HIT, MISS };
 enum cell_t  enemy_grid[N_ROWS][N_COLUMNS];
 enum cell_t  my_grid[N_ROWS][N_COLUMNS];
 unsigned enemy_hits;
-
+int server_d, UDP_fd;
 char* size_buff;
 char* cmd_buffer;
 char* buff_pointer;
@@ -47,7 +47,7 @@ int extract_int( int offset ) {
     int tmp; 
 	void* pointer = (void*) &tmp;
 	memcpy( pointer, cmd_buffer + offset, sizeof(int) );
- //   printf( "[DEBUG] intero estratto %d\n", tmp );
+    printf( "[DEBUG] intero estratto %d\n", tmp );
     return tmp;
 }
 
@@ -78,24 +78,30 @@ int set_pkt( int* cmd_id, char* username, int* portUDP ) {
 	if ( portUDP != NULL )
 		insert_buff( portUDP, sizeof(int));
 	return ret;
-}	
+}
 
-void send_cmd( int server_d, int* size ) {
+void send_cmd( int* size, struct sockaddr_in* opponent_addr ) {
 	int ret;
-	ret = send( server_d, (void*) size, sizeof(int), 0 ); //invio dimensione pacchetto
+	if ( opponent_addr == NULL )
+		ret = send( server_d, (void*) size, sizeof(int), 0 ); //invio dimensione pacchetto
+	else 
+		ret = sendto( UDP_fd, (void*) size, sizeof(int), 0, (struct sockaddr*) opponent_addr, sizeof(struct sockaddr));
+
 	if ( ret < sizeof(int) ) {
-		printf("[ERRORE] Invio dimensione comando \n");
+		perror("[ERRORE] Invio dimensione comando \n");
 		return;
 	}
 	int s = *(size);
-//	printf("[DEBUG] bytes da inviare %d \n", s);
-	ret = send( server_d, (void*) cmd_buffer, s, 0 );
+	printf("[DEBUG] bytes da inviare %d \n", s);
+	if ( opponent_addr == NULL )
+		ret = send( server_d, (void*) cmd_buffer, s, 0 );
+	else 
+		ret = sendto( UDP_fd, (void*) cmd_buffer, s, 0, (struct sockaddr*) opponent_addr, sizeof(struct sockaddr));
 	if ( ret < *(size) ) {
-		printf( "[ERRORE] Invio comando \n" );
+		perror( "[ERRORE] Invio comando \n" );
 		return;
 	}
-//	printf( "[DEBUG] bytes inviati %d \n", ret );
-
+	printf( "[DEBUG] bytes inviati %d \n", ret );
 }
 
 int recv_response(int fd) {
@@ -132,15 +138,15 @@ int main( int  argc, char** argv) {
 		exit(1);
 	}
 
-    int i, opponent_port, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_d, server_port;
+    int i, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_port;
 	char read_buffer[READ_BUFFER_SIZE];
 	char* cmd_name;
 	char* challenged_user;
 	char* challenging_user;
+	char ip[INET_ADDRSTRLEN];
 	char y_n;
-	char opponent_ip[INET_ADDRSTRLEN];
 	const char delimiter[2] = " ";
-	struct sockaddr_in server_addr;
+	struct sockaddr_in server_addr, my_addr, opponent_addr;
 	
 	FD_ZERO(&master);
 	FD_ZERO(&read_fds);
@@ -161,7 +167,6 @@ int main( int  argc, char** argv) {
     }
  	FD_SET(server_d, &master);
 	FD_SET(STDIN, &master);
-	fdmax = server_d;
     printf( "[INFO] Connessone al server %s ( porta %d ) avvenuta con successo \n\n%s", argv[1], server_port, HELP_MSG );
 	
 	do {
@@ -173,13 +178,22 @@ int main( int  argc, char** argv) {
 		scanf( "%d", &portUDP );
 		cmd_id = 0;
 		ret = set_pkt( &cmd_id, read_buffer, &portUDP );
-		send_cmd( server_d, &ret );
+		send_cmd( &ret, NULL);
 		recv_response( server_d );
 		ret = extract_int(0);
 	//	printf( "[DEBUG] risposta registrazione %d \n", ret );
 		printf( "\n> " );
 		fflush(stdout);
 	} while ( ret == -1 );
+
+	UDP_fd = socket( AF_INET, SOCK_DGRAM, 0 );
+	memset( &my_addr, 0, sizeof( my_addr ));
+	my_addr.sin_family = AF_INET;
+	my_addr.sin_port = htons( portUDP );
+	my_addr.sin_addr.s_addr = INADDR_ANY;
+	ret = bind ( UDP_fd, (struct sockaddr*) &my_addr, sizeof( my_addr ));
+	FD_SET( UDP_fd, &master );
+	fdmax = UDP_fd;
 
 	for(;;) {
 		read_fds = master;
@@ -224,7 +238,7 @@ int main( int  argc, char** argv) {
 					}
 		
 				//	printf("[DEBUG] Richiesta comando %d \n", cmd_id );
-					send_cmd(server_d, &ret);
+					send_cmd(&ret, NULL);
 				}
 				if ( i == server_d ) {
 				//	printf( "[DEBUG] server socket pronto \n");
@@ -235,16 +249,16 @@ int main( int  argc, char** argv) {
 					response_id = extract_int(0);
 					switch( response_id ) { 
 						case -2: // utente sfidato non esiste 
-							printf( "Il giocatore sfidato non esiste \n> " );
+							printf( " %s non esiste \n> ", challenged_user );
 							break;
 						case -1: // l'utente sfidato ha rifiutato la partita
-							printf( "Il giocatore sfidato ha rifutato la partita \n> " );
+							printf( " %s ha rifutato la partita \n> ", challenged_user );
 							break;
 						case 1: // risposta al comando !who contenente la lista di client connnessi
 							list_size = extract_int(4);
 							char* list = malloc(list_size);
 							memcpy( list, cmd_buffer + 8, list_size);
-							printf( "Client connessi al server: %s \n> ", list);
+							printf( " Client connessi al server: %s \n> ", list);
 							break;
 						case 2: // sei stato sfidato 
 							username_size = extract_int(4);
@@ -254,22 +268,41 @@ int main( int  argc, char** argv) {
 							do {
 								scanf("%c", &y_n);
 							} while ( y_n != 's' && y_n != 'S' && y_n != 'n' && y_n != 'N' );
-
-							if ( y_n == 's' || y_n == 'S' ) {
-								cmd_id = 3;
-								opponent_port = ( 8 + username_size );
-								printf( "[DEBUG] porta sfidante ricevuta %d \n", opponent_port);
-								memcpy( opponent_ip, cmd_buffer + 16 + username_size, INET_ADDRSTRLEN );
-								//creare un sockaddr dedicato all'avversario
-
-							} else if ( y_n == 'n' || y_n == 'N') {
+							printf("> ");
+							if ( y_n == 's' || y_n == 'S' ) 			
+								cmd_id = 3; //sfida accettata
+							 else if ( y_n == 'n' || y_n == 'N') 
 								cmd_id = -1; // sfida rifiutata 
-								ret = set_pkt( &cmd_id, challenging_user );
-								send_cmd( server_d, &ret );
-							}
+							
+							ret = set_pkt( &cmd_id, challenging_user, NULL ); 
+							send_cmd( &ret, NULL );
+							break;
+						case 3: // l'utente sfidato ha accettato la partita
+							printf( " %s ha accettato la partita \n# ", challenged_user ); 
+							memset( &opponent_addr, 0, sizeof( opponent_addr ));
+							opponent_addr.sin_family = AF_INET;
+							opponent_addr.sin_port = htons( extract_int( 4 ));
+							memcpy( ip, cmd_buffer + 8, INET_ADDRSTRLEN );
+							printf("[DEBUG] info avversario ricevute: ip %s, porta %d \n", ip, opponent_addr.sin_port );
+							inet_pton( AF_INET, ip, &opponent_addr.sin_addr );	
+							cmd_id = 0; // presentazione 
+							ret = set_pkt( &cmd_id, NULL, NULL );
+							send_cmd( &ret, &opponent_addr );
+							break;
+					} 
+					fflush(stdout);
+				} if ( i == UDP_fd ) {
+					ret = recv_response( UDP_fd );
+					if ( ret == -1 )
+						break;
+					
+					response_id = extract_int(0);
+					printf("[DEBUG] UDP fd richiede %d \n", response_id);
+					switch( response_id ) { 
+						case 0: // presentazione
+							printf( "[DEBUG] presentazione ricevuta \n");	
 							break;
 					}
-					fflush(stdout);
 				}
 			}
 		}
