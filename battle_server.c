@@ -20,6 +20,7 @@ struct client_t {
 	struct sockaddr_in addr;
 	int fd;
 	int ingame;
+	int under_request;
 	struct client_t* next;
 };
 
@@ -27,7 +28,6 @@ char* ip_addr = "127.0.0.1";
 const char* disponibile = "( libero )";
 const char* non_disponibile = "( in partita )";
 struct client_t* clients = NULL;
-int n_clients = 0;
 int end = 0;
 int listener;
 char* buff_pointer;
@@ -40,8 +40,10 @@ fd_set read_fds;
 void delete_list() {
 	struct client_t* next;
 	struct client_t* current = clients;
-
-	for( ;current != NULL; current = next ) {	
+	if ( clients == NULL )
+		return;
+	for( ;current != NULL; current = next ) {
+		printf( "[DEBUG] chiusura %d, rimozione %s \n", current->fd, current->username );
 		close( current->fd );
 		next = current->next; 
 		free( current );
@@ -53,41 +55,38 @@ void remove_client( int fd ) {
 	struct client_t* previous = clients;
 	struct client_t* current = clients->next;
 
+	if ( previous->fd == fd ) {
+		clients = current;
+		printf("[DEBUG] rimozione %s dalla lista \n", previous->username );
+		close( previous->fd );
+		free( previous );
+		return;
+	}
+
 	for( ;current != NULL; previous = current, current = current->next ) {	
 		if ( current->fd == fd ) {
 			previous->next = current->next;
 			current->next = NULL;
+			printf("[DEBUG] rimozione %s dalla lista \n",current->username );
+			close( current->fd );
 			free( current );
-			n_clients--;
 			return;
 		}
 	}
 }
 
-struct client_t* get_client( int fd ) {
+struct client_t* get_client( char* username ) {
 	struct client_t* tmp;
 	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) 
-		if ( tmp->fd == fd ) { 
-
+		if ( strcmp( tmp->username, username ) == 0 ) { 
 			return tmp; 
 		}
 	return NULL;
 }
 
-int get_fd( char* username ) {
-	struct client_t* tmp;
-	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
-		if ( strcmp( tmp->username, username ) == 0 ) {
-			printf( "[DEBUG] fd client sfidato trovato %d \n", tmp->fd);
-			return tmp->fd;
-		}
-	}
-	return -1;
-}
-
 void catch_stop( int sig_num ) {
 	signal( SIGINT, catch_stop );
-	printf( " *** SERVER INTERROTTO ***\n" );
+	printf( " \n*** SERVER INTERROTTO ***\n" );
 	delete_list();
 	close(listener);
 	FD_CLR( listener, &master );
@@ -103,15 +102,18 @@ int extract_int( int offset ) {
     return tmp;
 }
 
-int check_user_free ( char* username ) {
+int check_user_status( char* username ) {
 	struct client_t* tmp;
 	for( tmp = clients; tmp->next != NULL; tmp = tmp->next ) {	
-		if ( strcmp( tmp->username, username ) == 0 && strcmp( tmp->username, disponibile ) == 0 ) {
-			printf( "[DEBUG] %s disponibile \n", username);
-			return 0;
+		if ( strcmp( tmp->username, username ) == 0 ) {
+			if ( tmp->ingame == 1 )
+				return -3; // giocatore in partita
+			if ( tmp->under_request == 1 )
+				return -4; // giocatore sotto richiesta
+			return 0; // giocatore libero
 		}
 	}
-	return 1;
+	return -2; // giocatore insesistente
 }
 
 int check_user_presence( char* username ) {
@@ -127,10 +129,9 @@ int check_user_presence( char* username ) {
 
 char* print_clients() {
     struct client_t* i;
-    printf( "[DEBUG] print %d clients \n", n_clients);
 	int string_size = 0;
 	for ( i = clients; i->next != NULL; i = i-> next ) {
-		string_size += strlen( i->username ) + 15; // 
+		string_size += strlen( i->username ) + 15; 
 		if ( i->ingame == 1 )
 			string_size += strlen( non_disponibile );
 		else
@@ -154,7 +155,7 @@ void insert_buff( void* src, int n ) {
 	buff_pointer += n;
 }
 
-int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip, char* ip2 ) {
+int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip) {
 	int ret = sizeof(int);
 	int string_size = 0;
 	if ( string_msg != NULL ) {
@@ -165,8 +166,7 @@ int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip, char* i
 		ret += sizeof( int );
 	if ( ip != NULL )
 		ret += INET_ADDRSTRLEN;
-	if ( ip2 != NULL )
-		ret += INET_ADDRSTRLEN;
+	
 	cmd_buffer = malloc(ret);
 	buff_pointer = cmd_buffer;
 	insert_buff( response_id, sizeof(int));
@@ -178,10 +178,10 @@ int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip, char* i
 		insert_buff( portUDP, sizeof(int));
 	if ( ip != NULL )
 		insert_buff( ip, INET_ADDRSTRLEN );
-	if ( ip2 != NULL )
-		insert_buff( ip, INET_ADDRSTRLEN );
 	return ret;
 }
+
+/********************* SEND RECV **********************************/
 
 void send_response( int client_fd, int* size ) {
 	int ret;
@@ -208,7 +208,6 @@ int recv_cmd(int fd) {
 	if ( ret == 0 ) {
 		printf( "[INFO] Disconessione del client %d \n", fd );
 		remove_client(fd);
-		close(fd);
 		FD_CLR( fd, &master );
 		return -1;
 	} 
@@ -216,7 +215,6 @@ int recv_cmd(int fd) {
 		printf( "[ERRORE] Dimensione comando \n");
 		return -1;
 	}
-	//free( cmd_buffer );
 	cmd_buffer = malloc( cmd_size );
     printf("[DEBUG] bytes attesi %d \n", cmd_size );
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
@@ -227,6 +225,7 @@ int recv_cmd(int fd) {
     return 0;
 }	
 
+/************************ MAIN ****************************************/
 
 int main( int argc, char** argv ) {
 	if ( argc != 2 ) {
@@ -234,13 +233,13 @@ int main( int argc, char** argv ) {
 		exit(1);
 	}
 
-	int username_size, i, fdmax, port, ret, response_id, cmd_id, opponent_fd;
+	int username_size, i, fdmax, port, ret, response_id, cmd_id;
 	struct sockaddr_in server_addr;
     socklen_t addrlen;
     struct client_t* client_i;
+	struct client_t* c_pointer;
 	char* username;
 	char ip[INET_ADDRSTRLEN];
-	char ip2[INET_ADDRSTRLEN];
 
     clients = (struct client_t*) malloc( sizeof( struct client_t));
    
@@ -272,6 +271,8 @@ int main( int argc, char** argv ) {
 
 	fdmax = listener;
 	signal( SIGINT, catch_stop );	
+	signal( SIGSTOP, catch_stop );
+	signal( SIGQUIT, catch_stop );
 	for (;;) {
 		read_fds = master;
 		select( fdmax + 1, &read_fds, NULL, NULL, NULL );
@@ -289,9 +290,9 @@ int main( int argc, char** argv ) {
 					new_client->username = "";
 					new_client->portUDP = 0;
 					new_client->ingame = 0;
+					new_client->under_request = 0;
 					new_client->next = clients;
    					clients = new_client;
- 					n_clients++;				
 				
 					FD_SET( new_client->fd, &master);
 					if ( new_client->fd > fdmax )
@@ -308,78 +309,71 @@ int main( int argc, char** argv ) {
 					
                             cmd_id = extract_int(0);					
 							printf( "[DEBUG] fd %d richiede %d \n", i, cmd_id );
-						if ( cmd_id != 1 ) {
-									username_size = extract_int(4);
-									username = malloc( username_size );
-									memcpy( username, cmd_buffer + 8, username_size);
+							if ( cmd_id != 1 ) {
+								username_size = extract_int(4);
+								username = malloc( username_size );
+								memcpy( username, cmd_buffer + 8, username_size);
 							}		
 							switch( cmd_id ) {
 								case -2: // utente disconnesso 
-									opponent_fd = get_fd( username );
-									struct client_t* user = get_client( opponent_fd );
-									user->ingame = 0;
+									c_pointer = get_client( username );
+									c_pointer->ingame = 0;
 									client_i->ingame = 0;
 									response_id = 4;
-									ret = set_pkt( &response_id, NULL, NULL, NULL, NULL );
-									send_response( opponent_fd, &ret );
+									ret = set_pkt( &response_id, NULL, NULL, NULL);
+									send_response( c_pointer->fd, &ret );
 								case -1: // l'utente attuale ha rifiutato la sfida
 									response_id = -1;
-									ret = set_pkt( &response_id, username, NULL, NULL, NULL);
-									opponent_fd = get_fd( username );
-									send_response( opponent_fd, &ret );
+									ret = set_pkt( &response_id, username, NULL, NULL);
+									c_pointer = get_client( username );
+									c_pointer->under_request = 0;
+									client_i->under_request = 0;
+									send_response( c_pointer->fd, &ret );
 									break;
 								case 0: // ricezione username e porta UDP 
 									client_i->portUDP = extract_int(8 + username_size );
 									printf("[DEBUG] username %s \n", username ); 
-									response_id = 0; // check_user_presence( username );
+									response_id =  check_user_presence( username );
 						        	if ( response_id == 0 ) {
 										client_i->username = malloc( username_size );
 										strcpy( client_i->username,	username);
 									}
 									printf( "[DEBUG] response_id %d\n", response_id);
-									ret = set_pkt( &response_id, NULL, NULL, NULL, NULL );
+									ret = set_pkt( &response_id, NULL, NULL, NULL);
 									send_response( client_i->fd, &ret ); 
 									printf("[DEBUG] porta UDP %d\n", client_i->portUDP );
 									break;
 						    	case 1: // !who -  invio lista clienti connessi
 									printf( "[DEBUG] client_i stato %d\n", client_i->ingame);
 								    response_id = 1;
-									ret = set_pkt( &response_id, print_clients(), NULL, NULL, NULL );
+									ret = set_pkt( &response_id, print_clients(), NULL, NULL);
 									send_response( client_i->fd, &ret );
 									break;		    				
 				  		    	case 2: // !connect username
-									response_id = check_user_presence( username );
-									if ( response_id == 0 ) {
-										response_id = -3; // utente non esistente
-										ret = set_pkt( &response_id, NULL, NULL, NULL, NULL);
-										send_response( client_i->fd, &ret );
-										break;
+									response_id = check_user_status(username );
+									if ( response_id < 0 ) {
+										ret = set_pkt( &response_id, NULL, NULL, NULL);
+										send_response( client_i->fd, &ret ); break;
 									}
-									response_id = check_user_free( username );
-									if ( response_id == 0 ) {
-										response_id = -2; //utente gia' in partita
-										ret = set_pkt( &response_id, NULL, NULL, NULL, NULL );
-										send_response( client_i->fd, &ret );
-										break;
-									}
-									opponent_fd = get_fd( username );
+									c_pointer = get_client( username );
+									c_pointer->under_request = 1;
+									client_i->under_request = 1;
 									response_id = 2;
-									ret = set_pkt( &response_id, client_i->username, NULL, NULL, NULL); // invio sfida con il nome dello sfidante
-									send_response( opponent_fd, &ret );
+									ret = set_pkt( &response_id, client_i->username, NULL, NULL); // invio sfida con il nome dello sfidante
+									send_response( c_pointer->fd, &ret );
 									break;
 								case 3: // sfida accettata | sfidato
-									opponent_fd = get_fd( username );
-									struct client_t* challenging_user = get_client( opponent_fd );
-									challenging_user->ingame = 1; //sfidante "in partita"
+									c_pointer = get_client( username );
 									port = client_i->portUDP;
 									inet_ntop( AF_INET, &(client_i->addr.sin_addr), ip, INET_ADDRSTRLEN);	
-									inet_ntop( AF_INET, &(challenging_user->addr.sin_addr), ip2, INET_ADDRSTRLEN);	
-									
+									c_pointer->under_request = 0;
+									client_i->under_request = 0;
+									c_pointer->ingame = 1; //sfidante "in partita"
 									client_i->ingame = 1; //sfidato "in partita"
 									printf( "[DEBUG] invio dati a %s: porta %d \n", username, port );	
 									response_id = 3;
-									ret = set_pkt( &response_id, NULL, &port, ip, ip2 );
-									send_response( opponent_fd, &ret );
+									ret = set_pkt( &response_id, NULL, &port, ip);
+									send_response( c_pointer->fd, &ret );
 									break;
 							}
 							free(username);
