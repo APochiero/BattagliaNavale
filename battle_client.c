@@ -122,7 +122,7 @@ void send_cmd( int* size, int TCP_UDP ) {
 		return;
 	}
 	int s = *(size);
-	a//printf("[DEBUG] bytes da inviare %d\n", s);
+	//printf("[DEBUG] bytes da inviare %d\n", s);
 	if ( TCP_UDP == 0 )
 		ret = send( server_fd, (void*) cmd_buffer, s, 0 );
 	else 
@@ -436,7 +436,7 @@ int main( int  argc, char** argv) {
 								printf( " %s gia' occupato in una partita \n> ", opponent_username );
 								break; 
 							case -2:// utente non esiste
-								printf( " %s inesistente \n> ", opponent_username );
+								printf( " Impossibile connettersi a %s: utente inesistente \n> ", opponent_username );
 								break;
 							case -1: // l'utente sfidato ha rifiutato la partita
 								printf( " %s ha rifutato la partita \n> ", opponent_username );
@@ -485,7 +485,7 @@ int main( int  argc, char** argv) {
 								printf( "\n# ");
 								break;
 							case 4: // VITTORIA
-								printf( " Hai distrutto la flotta nemica!! \n> " );
+								printf( " `.`.`.`.` VITTORIA `.`.`.`.` \n Hai distrutto la flotta nemica!! \n> " );
 								ingame = 0;
 								my_hits = opponent_hits = 0;
 								memset( &opponent_addr, 0, sizeof( opponent_addr ));
@@ -515,6 +515,7 @@ int main( int  argc, char** argv) {
 								break;
 							case 1:
 								printf(" %s ha posizionato le sue navi ed e' pronto a giocare \n", opponent_username );
+								printf( "%s \n", HELP_MSG_INGAME );
 								if ( turn == 0 ) 
 									printf( " E' il turno di %s \n# ", opponent_username);
 								else
@@ -532,12 +533,12 @@ int main( int  argc, char** argv) {
 										 my_grid[square[0]][square[1]] = HIT;
 										 opponent_hits++;
 										 response_id = 3; 
-										 printf( " %s spara in posizione %d,%d. Preso :(\n", opponent_username, square[0]+1, square[1]+1); break;
+										 printf( " %s spara in posizione %d,%d. Colpito :(\n", opponent_username, square[0]+1, square[1]+1); break;
 									default: break;
 								}
 								if ( opponent_hits == 7 ) {
 								 	response_id = 4; // Vittoria
-								   	printf( " %s ha vinto :( \n> ", opponent_username );
+								   	printf( " ....... SCONFITTA ....... \n %s ha distrutto la tua flotta :( \n> ", opponent_username );
 									ingame = 0;
 									my_hits = opponent_hits = 0;
 									ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
@@ -549,7 +550,7 @@ int main( int  argc, char** argv) {
 								send_cmd( &ret, 1 );
 								printf( " E' il tuo turno\n# "); break;
 							case 3:
-								printf( " %s dice: preso! :) \n", opponent_username );
+								printf( " %s dice: Colpito! :) \n", opponent_username );
 								opponent_grid[square[0]][square[1]] = HIT; 
 								my_hits++;
 								turn = 0; 
