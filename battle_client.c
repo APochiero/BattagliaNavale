@@ -42,7 +42,6 @@ enum cell_t  { BUSY, FREE, HIT, MISS };
 enum cell_t  opponent_grid[N_ROWS][N_COLUMNS];
 enum cell_t  my_grid[N_ROWS][N_COLUMNS];
 int server_fd, UDP_fd;
-int end = 0;
 int opponent_hits = 0;
 int my_hits = 0;
 int square[2];
@@ -53,24 +52,24 @@ char* my_username;
 char* opponent_username;
 char read_buffer[READ_BUFFER_SIZE];
 struct sockaddr_in opponent_addr;
+struct timeval tv = {60, 0};   
 fd_set master;
 fd_set read_fds;
 
 /**************** UTILITA' *********************/
 
 void catch_stop( int sig_num ) {
-	signal( SIGINT, catch_stop );
 	close(server_fd);
 	close(UDP_fd);
 	printf( " \n*** CLIENT INTERROTTO *** \n" );
-	end = 1;
+	kill( getpid(), 15 );
 }
 
 int extract_int( char* buffer, int offset ) {
     int tmp; 
 	void* pointer = (void*) &tmp;
 	memcpy( pointer, buffer + offset, sizeof(int) );
-    printf( "[DEBUG] intero estratto %d\n", tmp );
+    //printf( "[DEBUG] intero estratto %d\n", tmp );
     return tmp;
 }
 
@@ -79,15 +78,17 @@ void insert_buff( void* src, int n ) {
 	buff_pointer += n;
 }
 
-int set_pkt( int* cmd_id, char* string_msg, int* n, char* ip ) {
+int set_pkt( int* cmd_id, char* string_msg, int* n1, int* n2, char* ip ) {
 	int ret = sizeof(int);
 	int string_size = 0;
-
+	//printf("[DEBUG] pacchetto con comando %d \n", *(cmd_id));
 	if ( string_msg != NULL ) {
 		string_size = strlen(string_msg) + 1 ;
 		ret += string_size + sizeof(int);
 	}
-	if ( n != NULL ) 
+	if ( n1 != NULL ) 
+		ret += sizeof(int);
+	if ( n2 != NULL )
 		ret += sizeof(int);
 	if ( ip != NULL )
 		ret += INET_ADDRSTRLEN;
@@ -98,8 +99,10 @@ int set_pkt( int* cmd_id, char* string_msg, int* n, char* ip ) {
 		insert_buff( &string_size, sizeof(int));
 		insert_buff( string_msg, string_size );
 	}
-	if ( n != NULL )
-		insert_buff( n, sizeof(int));
+	if ( n1 != NULL )
+		insert_buff( n1, sizeof(int));
+	if ( n2 != NULL )
+		insert_buff( n2, sizeof(int));
 	if ( ip != NULL )
 		insert_buff( ip, INET_ADDRSTRLEN );
 	return ret;
@@ -119,7 +122,7 @@ void send_cmd( int* size, int TCP_UDP ) {
 		return;
 	}
 	int s = *(size);
-	printf("[DEBUG] bytes da inviare %d\n", s);
+	a//printf("[DEBUG] bytes da inviare %d\n", s);
 	if ( TCP_UDP == 0 )
 		ret = send( server_fd, (void*) cmd_buffer, s, 0 );
 	else 
@@ -128,7 +131,8 @@ void send_cmd( int* size, int TCP_UDP ) {
 		perror( "[ERRORE] Invio comando \n" );
 		return;
 	}
-	printf( "[DEBUG] bytes inviati %d \n", ret );
+	//printf( "[DEBUG] bytes inviati %d \n", ret );
+	free(cmd_buffer);
 }
 
 int recv_response(int TCP_UDP ) {
@@ -144,7 +148,7 @@ int recv_response(int TCP_UDP ) {
 		printf( " *** SERVER INTERROTTO *** \n" );
 		close(server_fd);
 		FD_CLR( server_fd, &master );
-		end = 1;
+		catch_stop(0);
 		return -1;
 	} else if ( ret < 0 ) {
 		printf( "[ERRORE] Dimensione comando via TCP_UDP %d\n", TCP_UDP);
@@ -161,7 +165,7 @@ int recv_response(int TCP_UDP ) {
 		printf("[ERRORE] Bytes ricevuti %d insufficienti per il comando scelto\n", ret);
 		return -1;
 	}
-    printf("[DEBUG] bytes ricevuti %d \n", ret );
+    //printf("[DEBUG] bytes ricevuti %d \n", ret );
     return 0;
 }	
 
@@ -191,6 +195,7 @@ int get_square( char* string, int* square ) {
 		return -1;
 	}
 	square[0]--; square[1]--;
+	//printf( "[DEBUG] letti %d,%d \n", square[0], square[1]);
 	return 0;
 }	
 
@@ -294,7 +299,7 @@ int main( int  argc, char** argv) {
 		printf( "Inserisci la porta UDP di ascolto: ");
 		scanf( "%d", &portUDP );
 		cmd_id = 0;
-		ret = set_pkt( &cmd_id, read_buffer, &portUDP, NULL );
+		ret = set_pkt( &cmd_id, read_buffer, &portUDP, NULL, NULL );
 		send_cmd( &ret,0);
 		recv_response( 0  );
 		ret = extract_int( cmd_buffer, 0);
@@ -316,217 +321,245 @@ int main( int  argc, char** argv) {
 	fdmax = UDP_fd;
 
 	ingame = 0;
-	while( end == 0 ) {
+	for( ;; ) {
 		read_fds = master;
-		select( fdmax + 1, &read_fds, NULL, NULL, NULL );
-		for( i = 0; i <= fdmax; i++ ) {
-			if ( FD_ISSET( i, &read_fds ) ) {
-/***************** LETTURA COMANDI **************************/
-				if ( i == STDIN ) {
-					fgets( read_buffer, READ_BUFFER_SIZE, stdin );
-					char *rmv_newline = strchr( read_buffer, '\n');
-					*rmv_newline = ' ';
-					strcat( read_buffer, delimiter);
-					cmd_name = strtok( read_buffer, delimiter);	
-					if ( cmd_name == '\0' )
-						break;
-					switch ( ingame ) {
-						case 0:
-							if ( cmd_name == NULL )
-								printf("> ");
-							else if ( strcmp( cmd_name, QUIT ) == 0 ) {
-								printf( "[INFO] Disconnessione dal server \n" );
-								close( server_fd );
-								return 0;
-							} 
-							if ( strcmp( cmd_name, HELP ) == 0 ) 
-								printf ( "%s> ", HELP_MSG );
-							else if ( strcmp( cmd_name, WHO ) == 0 ) {
-								cmd_id = 1;
-								ret = set_pkt( &cmd_id, NULL, NULL, NULL ); 
-								send_cmd(&ret,0);
-							} else if ( strcmp( cmd_name, CONNECT ) == 0 ) {
-								cmd_id = 2;
-								opponent_username = strtok( NULL, delimiter );
-								if ( opponent_username == NULL ) 
-									printf( "Uso: !connect <username> \n> ");
-								else if ( strcmp( opponent_username, my_username ) == 0 ) 
-									printf( " Specificare un username diverso dal proprio \n> " );
-							 	else {
-									printf( " In attesa di %s... \n", opponent_username );
-									ret = set_pkt( &cmd_id, opponent_username, NULL, NULL ); 
-									send_cmd(&ret, 0);
-								}
-							} else 
-								printf(" Comando non riconosciuto \n> " );
+		ret = select( fdmax + 1, &read_fds, NULL, NULL, &tv );
+		if ( ret == 0 && ingame == 1  ) {
+			cmd_id = -2; 
+			ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
+			send_cmd( &ret, 0 );
+			ingame = 0;
+			printf( " Disconnessione per inattivita'\n> ");
+			fflush(stdout);
+		} else {
+			tv.tv_sec = 60;
+			tv.tv_usec = 0;
+			for( i = 0; i <= fdmax; i++ ) {
+				if ( FD_ISSET( i, &read_fds ) ) {
+/******	*********** LETTURA COMANDI **************************/
+					if ( i == STDIN ) {
+						fgets( read_buffer, READ_BUFFER_SIZE, stdin );
+						char *rmv_newline = strchr( read_buffer, '\n');
+						*rmv_newline = ' ';
+						strcat( read_buffer, delimiter);
+						cmd_name = strtok( read_buffer, delimiter);	
+						if ( cmd_name == '\0' )
 							break;
-						case 1:
-							if ( cmd_name == NULL )
-								printf("# ");
-							else if ( strcmp( cmd_name, DISCONNECT ) == 0 ) {
-								cmd_id = -2; // resa 
-								printf("[DEBUG] opponent_username %s \n", opponent_username );
-								ret = set_pkt( &cmd_id, opponent_username, NULL, NULL ); 
-								send_cmd( &ret, 0 );
-								ingame = 0;
-								printf( " Disconnessione avvenuta con successo: TI SEI ARRESO\n> ");
-							} else if ( strcmp( cmd_name, HELP ) == 0 ) 
-								printf( "%s# ", HELP_MSG_INGAME );
-							else if ( strcmp( cmd_name, SHOT ) == 0 ) {
-								square_string = strtok( NULL, delimiter );
-								if ( square_string == NULL )
-									printf( "Uso: !shot <casella> \n# ");
-								else if ( opponent_rtp == 0 )
-									printf( " %s non e' ancora pronto\n# ", opponent_username );
-								else if ( turn == 0 ) 
-									printf(" Attendi il tuo turno \n# " ); 
-								else if ( get_square(square_string, square) == 0 ) {
-									if ( opponent_grid[square[0]][square[1]] == HIT || opponent_grid[square[0]][square[1]] == MISS ) 
-										printf( " Hai gia' sparato questa casella \n#" );
-									else {
-										cmd_id = 2;
-										ret = set_pkt( &cmd_id, square_string, NULL, NULL);
-										send_cmd( &ret, 1);
+						switch ( ingame ) {
+							case 0:
+								if ( cmd_name == NULL )
+									printf("> ");
+								else if ( strcmp( cmd_name, QUIT ) == 0 ) {
+									printf( "[INFO] Disconnessione dal server \n" );
+									close( server_fd );
+									return 0;
+								} 
+								if ( strcmp( cmd_name, HELP ) == 0 ) 
+									printf ( "%s> ", HELP_MSG );
+								else if ( strcmp( cmd_name, WHO ) == 0 ) {
+									cmd_id = 1;
+									ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
+									send_cmd(&ret,0);
+								} else if ( strcmp( cmd_name, CONNECT ) == 0 ) {
+									cmd_id = 2;
+									char* tmp = strtok( NULL, delimiter );
+									opponent_username = malloc( strlen( tmp) );
+									strcpy( opponent_username, tmp );
+									if ( opponent_username == NULL ) 
+										printf( "Uso: !connect <username> \n> ");
+									else if ( strcmp( opponent_username, my_username ) == 0 ) 
+										printf( " Specificare un username diverso dal proprio \n> " );
+								 	else {
+										printf( " In attesa di %s... \n", opponent_username );
+										ret = set_pkt( &cmd_id, opponent_username, NULL, NULL, NULL ); 
+										send_cmd(&ret, 0);
 									}
-								}
-							} else if ( strcmp( cmd_name, SHOW ) == 0 ) 
-								print_grid();		
-							else 
-								printf( "Comando non riconosciuto \n# ");
-							break;
+								} else 
+									printf(" Comando non riconosciuto \n> " );
+								break;
+							case 1:
+								if ( cmd_name == NULL )
+									printf("# ");
+								else if ( strcmp( cmd_name, DISCONNECT ) == 0 ) {
+									cmd_id = -2; // resa 
+									//printf("[DEBUG] opponent_username %s \n", opponent_username );
+									ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
+									send_cmd( &ret, 0 );
+									ingame = 0;
+									printf( " Disconnessione avvenuta con successo: TI SEI ARRESO\n> ");
+								} else if ( strcmp( cmd_name, HELP ) == 0 ) 
+									printf( "%s# ", HELP_MSG_INGAME );
+								else if ( strcmp( cmd_name, SHOT ) == 0 ) {
+									square_string = strtok( NULL, delimiter );
+									if ( square_string == NULL )
+										printf( " Uso: !shot <casella> \n# ");
+									else if ( opponent_rtp == 0 )
+										printf( " %s non e' ancora pronto\n# ", opponent_username );
+									else if ( turn == 0 ) 
+										printf(" Attendi il tuo turno \n# " ); 
+									else if ( get_square(square_string, square) == 0 ) {
+										if ( opponent_grid[square[0]][square[1]] == HIT || opponent_grid[square[0]][square[1]] == MISS ) 
+											printf( " Hai gia' sparato questa casella \n# " );
+										else {
+											cmd_id = 2;
+											ret = set_pkt( &cmd_id, NULL, &square[0], &square[1], NULL);
+											send_cmd( &ret, 1);
+										}
+									} else 
+										printf("# ");
+								} else if ( strcmp( cmd_name, SHOW ) == 0 ) 
+									print_grid();		
+								else 
+									printf( "Comando non riconosciuto \n# ");
+								break;
+						}
+						fflush(stdout);
 					}
-					fflush(stdout);
-				}
-/******************* RISPOSTE DAL SERVER ****************************/
-				if ( i == server_fd ) {
-				//	printf( "[DEBUG] server socket pronto \n");
-					ret = recv_response(0);
-					if ( ret == -1 )
-						break;
-
-					response_id = extract_int( cmd_buffer, 0);
-					switch( response_id ) { 
-						case -4: // utente sotto un'altra richiesta
-							printf( " %s sta rispondendo ad un'altra sfida \n> ",opponent_username );
+/******	************* RISPOSTE DAL SERVER ****************************/
+					if ( i == server_fd ) {
+					//	printf( "[DEBUG] server socket pronto \n");
+						ret = recv_response(0);
+						if ( ret == -1 )
 							break;
-						case -3:// utente sfidato non e' disponibile a giocare
-							printf( " %s gia' occupato in una partita \n> ", opponent_username );
-							break; 
-						case -2:// utente non esiste
-							printf( " %s inesistente \n> ", opponent_username );
+	
+						response_id = extract_int( cmd_buffer, 0);
+						switch( response_id ) { 
+							case -5: // l'avversario si e' disconnesso
+								ingame = 0;
+								memset( &opponent_addr, 0, sizeof( opponent_addr ));
+								printf( " %s si e' arreso: VITTORIA!! \n> ", opponent_username );
+								break;	
+							case -4: // utente sotto un'altra richiesta
+								printf( " %s sta rispondendo ad un'altra sfida \n> ",opponent_username );
+								break;
+							case -3:// utente sfidato non e' disponibile a giocare
+								printf( " %s gia' occupato in una partita \n> ", opponent_username );
+								break; 
+							case -2:// utente non esiste
+								printf( " %s inesistente \n> ", opponent_username );
+								break;
+							case -1: // l'utente sfidato ha rifiutato la partita
+								printf( " %s ha rifutato la partita \n> ", opponent_username );
+								break;
+							case 1: // risposta al comando !who contenente la lista di client connnessi
+								list_size = extract_int( cmd_buffer, 4);
+								char* list = malloc(list_size);
+								memcpy( list, cmd_buffer + 8, list_size);
+								printf( " Client connessi al server: %s \n> ", list);
+								break;
+							case 2: // sei stato sfidato
+								username_size = extract_int( cmd_buffer, 4);
+								opponent_username = malloc(username_size);
+								memcpy( opponent_username, cmd_buffer + 8, username_size );
+								printf( " Sei stato sfidato da %s \n Premere (S) per accettare o (N) per rifiutare: ", opponent_username );
+								do {
+									scanf("%c", &y_n);
+								} while ( y_n != 's' && y_n != 'S' && y_n != 'n' && y_n != 'N' );
+								printf("> ");
+								if ( y_n == 's' || y_n == 'S' ) 			
+									cmd_id = 3; //sfida accettata
+								else if ( y_n == 'n' || y_n == 'N') 
+									cmd_id = -1; // sfida rifiutata 
+								
+								ret = set_pkt( &cmd_id, opponent_username, NULL, NULL, NULL ); 
+								send_cmd( &ret, 0 );
+								break;
+							case 3: // l'utente sfidato ha accettato la partita
+								printf( " %s ha accettato la partita \n", opponent_username );
+								memset( &opponent_addr, 0, sizeof( opponent_addr ));
+								opponent_addr.sin_family = AF_INET;
+								opponent_addr.sin_port = htons( extract_int( cmd_buffer,  4 ));
+								memcpy( ip, cmd_buffer + 8, INET_ADDRSTRLEN );
+								//printf("[DEBUG] info avversario ricevute: ip %s, porta %d \n", ip, opponent_addr.sin_port );
+								inet_pton( AF_INET, ip, &opponent_addr.sin_addr );	
+								cmd_id = 0; // presentazione 
+								ret = set_pkt( &cmd_id, NULL, &portUDP, NULL ,NULL );
+								send_cmd( &ret, 1 );
+								printf( " \n ### PARTITA CONTRO %s INIZIATA ### \n", opponent_username);
+								ingame = 1;
+								set_tokens();
+								cmd_id = 1; // ready_to_play
+								turn = 0;// lo sfidante inizia per secondo
+								ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL); 
+								send_cmd( &ret, 1 );
+								printf( "\n# ");
+								break;
+							case 4: // VITTORIA
+								printf( " Hai distrutto la flotta nemica!! \n> " );
+								ingame = 0;
+								my_hits = opponent_hits = 0;
+								memset( &opponent_addr, 0, sizeof( opponent_addr ));
+								break;
+						} 
+						fflush(stdout);
+/**	*************** INTERAZIONE CON L'AVVERSARIO *************************/ 
+					} if ( i == UDP_fd ) {
+						ret = recv_response(1);
+						if ( ret == -1 )
 							break;
-						case -1: // l'utente sfidato ha rifiutato la partita
-							printf( " %s ha rifutato la partita \n> ", opponent_username );
-							break;
-						case 1: // risposta al comando !who contenente la lista di client connnessi
-							list_size = extract_int( cmd_buffer, 4);
-							char* list = malloc(list_size);
-							memcpy( list, cmd_buffer + 8, list_size);
-							printf( " Client connessi al server: %s \n> ", list);
-							break;
-						case 2: // sei stato sfidato 
-							username_size = extract_int( cmd_buffer, 4);
-							opponent_username = malloc(username_size);
-							memcpy( opponent_username, cmd_buffer + 8, username_size );
-							printf( " Sei stato sfidato da %s \n Premere (S) per accettare o (N) per rifiutare: ", opponent_username );
-							do {
-								scanf("%c", &y_n);
-							} while ( y_n != 's' && y_n != 'S' && y_n != 'n' && y_n != 'N' );
-							printf("> ");
-							if ( y_n == 's' || y_n == 'S' ) 			
-								cmd_id = 3; //sfida accettata
-							 else if ( y_n == 'n' || y_n == 'N') {
-								cmd_id = -1; // sfida rifiutata 
-							}
-							ret = set_pkt( &cmd_id, opponent_username, NULL, NULL ); 
-							send_cmd( &ret, 0 );
-							break;
-						case 3: // l'utente sfidato ha accettato la partita
-							printf( " %s ha accettato la partita \n", opponent_username ); 
-							memset( &opponent_addr, 0, sizeof( opponent_addr ));
-							opponent_addr.sin_family = AF_INET;
-							opponent_addr.sin_port = htons( extract_int( cmd_buffer,  4 ));
-							memcpy( ip, cmd_buffer + 8, INET_ADDRSTRLEN );
-							printf("[DEBUG] info avversario ricevute: ip %s, porta %d \n", ip, opponent_addr.sin_port );
-							inet_pton( AF_INET, ip, &opponent_addr.sin_addr );	
-							cmd_id = 0; // presentazione 
-							ret = set_pkt( &cmd_id, NULL, &portUDP, NULL );
-							send_cmd( &ret, 1 );
-							printf( " \n ### PARTITA CONTRO %s INIZIATA ### \n", opponent_username);
-							ingame = 1;
-							set_tokens();
-							cmd_id = 1; // ready_to_play
-							turn = 0;// lo sfidante inizia per secondo
-							ret = set_pkt( &cmd_id, NULL, NULL, NULL); 
-							send_cmd( &ret, 1 );
-							printf( "\n# ");
-							break;
-						case 4: // l'avversario si e' disconnesso
-							ingame = 0;
-							memset( &opponent_addr, 0, sizeof( opponent_addr ));
-							printf( " %s si e' arreso: VITTORIA!! \n> ", opponent_username );
-							break;		
-					} 
-					fflush(stdout);
-/***************** INTERAZIONE CON L'AVVERSARIO *************************/ 
-				} if ( i == UDP_fd ) {
-					ret = recv_response(1);
-					if ( ret == -1 )
-						break;
-					
-					response_id = extract_int( cmd_buffer, 0);
-					printf("[DEBUG] UDP fd richiede %d \n", response_id);
-					switch( response_id ) { 
-						case -1:
-							printf( " %s dice: mancato :( \n", opponent_username );
-							printf( " E' il turno di %s \n# ", opponent_username);
-							opponent_grid[square[0]][square[1]] = MISS; 
-							turn = 0; break;
-						case 0: // lo sfidato riceve dallo sfidante il primo pacchetto udp
-							printf( " \n ### PARTITA CONTRO %s INIZIATA ### \n", opponent_username);
-							response_id = ingame = turn = 1; // rtp / in partita / lo sfidato inizia prima
-							set_tokens();
-							ret = set_pkt( &response_id, NULL, NULL, NULL ); 
-							send_cmd( &ret, 1);
-							break;
-						case 1:
-							printf(" %s ha posizionato le sue navi ed e' pronto a giocare \n", opponent_username );
-							if ( turn == 0 ) 
+						
+						response_id = extract_int( cmd_buffer, 0);
+						//printf("[DEBUG] UDP fd richiede %d \n", response_id);
+						switch( response_id ) { 
+							case -1:
+								printf( " %s dice: mancato :( \n", opponent_username );
 								printf( " E' il turno di %s \n# ", opponent_username);
-							else
-								printf( " E' il tuo turno\n# ");	 
-							opponent_rtp = 1; break;
-						case 2: // ricezione colpo
-							memcpy( square_string, cmd_buffer + 8, 9 );
-							//printf( "[DEBUG] square_string %s\n", square_string );
-							get_square( square_string, square );
-							switch ( my_grid[square[0]][square[1]] ) {
-								case FREE:
-									 my_grid[square[0]][square[1]] = MISS;
-									 response_id = -1; 
-									 printf( " %s spara in posizione %d,%d. Mancato :) \n", opponent_username, square[0]+1, square[1]+1); break;
-								case BUSY:
-									 my_grid[square[0]][square[1]] = HIT;
-									 opponent_hits++;
-									 response_id = 3; 
-									 printf( " %s spara in posizione %d,%d. Preso :(\n", opponent_username, square[0]+1, square[1]+1); break;
-								default: break;
-							}
-							turn = 1;
-							ret = set_pkt( &response_id, NULL, NULL, NULL ); 
-							send_cmd( &ret, 1 );
-							printf( " E' il tuo turno\n# "); break;
-						case 3:
-							printf( " %s dice: preso! :) \n", opponent_username );
-							opponent_grid[square[0]][square[1]] = HIT; 
-							my_hits++;
-							turn = 0; 
-							printf( " E' il turno di %s \n# ", opponent_username); break;
+								opponent_grid[square[0]][square[1]] = MISS; 
+								turn = 0; break;
+							case 0: // lo sfidato riceve dallo sfidante il primo pacchetto udp
+								printf( " \n ### PARTITA CONTRO %s INIZIATA ### \n", opponent_username);
+								response_id = ingame = turn = 1; // rtp / in partita / lo sfidato inizia prima
+								set_tokens();
+								ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
+								send_cmd( &ret, 1);
+								break;
+							case 1:
+								printf(" %s ha posizionato le sue navi ed e' pronto a giocare \n", opponent_username );
+								if ( turn == 0 ) 
+									printf( " E' il turno di %s \n# ", opponent_username);
+								else
+									printf( " E' il tuo turno\n# ");	 
+								opponent_rtp = 1; break;
+							case 2: // ricezione colpo
+								square[0] = extract_int( cmd_buffer, 4 ); // 2 | X |  Y |
+								square[1] = extract_int( cmd_buffer, 8);
+								switch ( my_grid[square[0]][square[1]] ) {
+									case FREE:
+										 my_grid[square[0]][square[1]] = MISS;
+										 response_id = -1; 
+										 printf( " %s spara in posizione %d,%d. Mancato :) \n", opponent_username, square[0]+1, square[1]+1); break;
+									case BUSY:
+										 my_grid[square[0]][square[1]] = HIT;
+										 opponent_hits++;
+										 response_id = 3; 
+										 printf( " %s spara in posizione %d,%d. Preso :(\n", opponent_username, square[0]+1, square[1]+1); break;
+									default: break;
+								}
+								if ( opponent_hits == 7 ) {
+								 	response_id = 4; // Vittoria
+								   	printf( " %s ha vinto :( \n> ", opponent_username );
+									ingame = 0;
+									my_hits = opponent_hits = 0;
+									ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
+									send_cmd( &ret, 0 ); 
+									break;
+								} 
+								turn = 1;
+								ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
+								send_cmd( &ret, 1 );
+								printf( " E' il tuo turno\n# "); break;
+							case 3:
+								printf( " %s dice: preso! :) \n", opponent_username );
+								opponent_grid[square[0]][square[1]] = HIT; 
+								my_hits++;
+								turn = 0; 
+								printf( " E' il turno di %s \n# ", opponent_username); break;
+						}
+						fflush(stdout);
 					}
-					fflush(stdout);
 				}
 			}
 		}
 	}
-    return 0;
+	return 0;
 }
