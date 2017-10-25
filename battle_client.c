@@ -304,7 +304,7 @@ int main( int  argc, char** argv) {
 		recv_response( 0  );
 		ret = extract_int( cmd_buffer, 0);
 	//	printf( "[DEBUG] risposta registrazione %d \n", ret );
-	} while ( ret == -1 ||  portUDP < 1024 || portUDP > 65536  );
+	} while ( ret == -1 ||  portUDP < 1024 || portUDP > 65535 );
 	
 	my_username = malloc( strlen( read_buffer ));
 	strcpy( my_username, read_buffer );
@@ -343,13 +343,16 @@ int main( int  argc, char** argv) {
 						*rmv_newline = ' ';
 						strcat( read_buffer, delimiter);
 						cmd_name = strtok( read_buffer, delimiter);	
-						if ( cmd_name == '\0' )
+						if ( cmd_name == '\0' && ingame == 0 ) {
+							printf("> ");
 							break;
+						} else if ( cmd_name == '\0' && ingame == 1 ) {
+							printf("# ");
+							break;
+						}
 						switch ( ingame ) {
 							case 0:
-								if ( cmd_name == NULL )
-									printf("> ");
-								else if ( strcmp( cmd_name, QUIT ) == 0 ) {
+								if ( strcmp( cmd_name, QUIT ) == 0 ) {
 									printf( "[INFO] Disconnessione dal server \n" );
 									close( server_fd );
 									return 0;
@@ -378,9 +381,7 @@ int main( int  argc, char** argv) {
 									printf(" Comando non riconosciuto \n> " );
 								break;
 							case 1:
-								if ( cmd_name == NULL )
-									printf("# ");
-								else if ( strcmp( cmd_name, DISCONNECT ) == 0 ) {
+								if ( strcmp( cmd_name, DISCONNECT ) == 0 ) {
 									cmd_id = -2; // resa 
 									//printf("[DEBUG] opponent_username %s \n", opponent_username );
 									ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
