@@ -25,7 +25,7 @@ struct client_t {
 	struct client_t* next;
 };
 
-char* ip_addr = "127.0.0.1";
+char* ip_addr = "192.168.0.107";
 const char* disponibile = "( libero )";
 const char* non_disponibile = "( in partita )";
 struct client_t* clients = NULL;
@@ -170,8 +170,11 @@ void remove_client( int fd ) {
 	if ( previous->fd == fd ) {
 		clients = current;
 		printf(" %s ha interrotto la connessione \n", previous->username );
-		if ( previous->ingame == 1 )
+		if ( previous->ingame == 1 ) {
+			printf( " %s si e' disconnesso dalla partita con %s \n", previous->username, previous->opponent_username );
+			printf( " %s e' libero \n", previous->opponent_username );
 			disconnect( previous->opponent_username);
+		}
 		close( previous->fd );
 		free( previous );
 		return;
@@ -181,8 +184,12 @@ void remove_client( int fd ) {
 		if ( current->fd == fd ) {
 			previous->next = current->next;
 			current->next = NULL;
-			if ( current->ingame == 1 )
+			printf(" %s ha interrotto la connessione \n", current->username );
+			if ( current->ingame == 1 ) {
+				printf( " %s si e' disconnesso dalla partita con %s \n", current->username, current->opponent_username );
+				printf( " %s e' libero \n", current->username );
 				disconnect( current->opponent_username);
+			}
 			close( current->fd );
 			free( current );
 			return;
@@ -320,6 +327,7 @@ int main( int argc, char** argv ) {
 									client_i->ingame = 0;
 									printf( " %s si e' disconnesso dalla partita con %s \n", client_i->username, c_pointer->username );
 									printf( " %s e' libero \n", c_pointer->username );
+									printf( " %s e' libero \n", client_i->username );
 									response_id = -5;
 									ret = set_pkt( &response_id, NULL, NULL, NULL);
 									send_response( c_pointer->fd, &ret ); break;
