@@ -25,7 +25,7 @@ struct client_t {
 	struct client_t* next;
 };
 
-char* ip_addr = "192.168.0.107";
+char* ip_addr = "127.0.0.1";
 const char* disponibile = "( libero )";
 const char* non_disponibile = "( in partita )";
 struct client_t* clients = NULL;
@@ -54,6 +54,9 @@ void delete_list() {
 	for( ;current != NULL; current = next ) {
 		close( current->fd );
 		next = current->next; 
+		if ( current->ingame == 1 )
+			free( current->opponent_username );
+		free( current->username );
 		free( current );
 	}
 	clients = NULL;
@@ -138,7 +141,7 @@ int set_pkt( int* response_id, char* string_msg, int* portUDP, char* ip) {
 		ret += sizeof( int );
 	if ( ip != NULL )
 		ret += INET_ADDRSTRLEN;
-	
+	free(cmd_buffer);
 	cmd_buffer = malloc(ret);
 	buff_pointer = cmd_buffer;
 	insert_buff( response_id, sizeof(int));
@@ -161,6 +164,9 @@ void disconnect( char* username ) {
 	int id = -5;
 	ret = set_pkt( &id, NULL, NULL, NULL ); 
 	send_response( user->fd, &ret );
+	printf( " %s si e' disconnesso dalla partita con %s \n", user->username, user->opponent_username );
+	printf( " %s e' libero \n", user->opponent_username );
+	free( user->opponent_username );
 } 
 
 void remove_client( int fd ) {
@@ -170,11 +176,8 @@ void remove_client( int fd ) {
 	if ( previous->fd == fd ) {
 		clients = current;
 		printf(" %s ha interrotto la connessione \n", previous->username );
-		if ( previous->ingame == 1 ) {
-			printf( " %s si e' disconnesso dalla partita con %s \n", previous->username, previous->opponent_username );
-			printf( " %s e' libero \n", previous->opponent_username );
+		if ( previous->ingame == 1 ) 
 			disconnect( previous->opponent_username);
-		}
 		close( previous->fd );
 		free( previous );
 		return;
@@ -185,11 +188,8 @@ void remove_client( int fd ) {
 			previous->next = current->next;
 			current->next = NULL;
 			printf(" %s ha interrotto la connessione \n", current->username );
-			if ( current->ingame == 1 ) {
-				printf( " %s si e' disconnesso dalla partita con %s \n", current->username, current->opponent_username );
-				printf( " %s e' libero \n", current->username );
+			if ( current->ingame == 1 ) 
 				disconnect( current->opponent_username);
-			}
 			close( current->fd );
 			free( current );
 			return;
@@ -212,7 +212,6 @@ void send_response( int client_fd, int* size ) {
 		printf( "[ERRORE] Invio comando \n" );
 		return;
 	}
-	free( cmd_buffer );
 }
 
 int recv_cmd(int fd) {
@@ -228,6 +227,7 @@ int recv_cmd(int fd) {
 		printf( "[ERRORE] Dimensione comando \n");
 		return -1;
 	}
+	free( cmd_buffer );
 	cmd_buffer = malloc( cmd_size );
 	ret = recv( fd, cmd_buffer, cmd_size, 0);
     if ( ret < 0 ) {
@@ -282,7 +282,6 @@ int main( int argc, char** argv ) {
 
 	fdmax = listener;
 	signal( SIGINT, catch_stop );	
-	signal( SIGSTOP, catch_stop );
 	signal( SIGQUIT, catch_stop );
 	for (;;) {
 		read_fds = master;
@@ -321,16 +320,13 @@ int main( int argc, char** argv ) {
 								memcpy( username, cmd_buffer + 8, username_size);
 							}		
 							switch( cmd_id ) {
-								case -2: // utente disconnesso 
+								case -2: // utente disconnesso
 									c_pointer = get_client( client_i->opponent_username );
-									c_pointer->ingame = 0;
 									client_i->ingame = 0;
-									printf( " %s si e' disconnesso dalla partita con %s \n", client_i->username, c_pointer->username );
-									printf( " %s e' libero \n", c_pointer->username );
-									printf( " %s e' libero \n", client_i->username );
-									response_id = -5;
-									ret = set_pkt( &response_id, NULL, NULL, NULL);
-									send_response( c_pointer->fd, &ret ); break;
+									disconnect( c_pointer->username );
+									printf( " %s e' libero \n", c_pointer->username ); 
+									free( client_i->opponent_username );
+									break;
 								case -1: // l'utente attuale ha rifiutato la sfida
 									response_id = -1;
 									ret = set_pkt( &response_id, username, NULL, NULL);
@@ -354,6 +350,7 @@ int main( int argc, char** argv ) {
 								    response_id = 1;
 									ret = set_pkt( &response_id, print_clients(), NULL, NULL);
 									send_response( client_i->fd, &ret );
+									free(printed_clients);
 									break;		    				
 				  		    	case 2: // !connect username
 									response_id = check_user_status(username );
@@ -397,9 +394,12 @@ int main( int argc, char** argv ) {
 									response_id = 4;
 									ret = set_pkt( &response_id, NULL, NULL, NULL );
 									send_response( c_pointer->fd, &ret );
+									free( client_i->opponent_username );
+									free( c_pointer->opponent_username );
 									break;
 							}
-							free(username);
+							if ( cmd_id != 1 && cmd_id != -2 && cmd_id != 4 )
+								free(username);
 				   		}
 				   	}
 				}

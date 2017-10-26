@@ -41,7 +41,7 @@ enum cell_t  { BUSY, FREE, HIT, MISS };
 
 enum cell_t  opponent_grid[N_ROWS][N_COLUMNS];
 enum cell_t  my_grid[N_ROWS][N_COLUMNS];
-int server_fd, UDP_fd;
+int server_fd, UDP_fd, ingame;
 int opponent_hits = 0;
 int my_hits = 0;
 int square[2];
@@ -62,6 +62,9 @@ void catch_stop( int sig_num ) {
 	close(server_fd);
 	close(UDP_fd);
 	printf( " \n*** CLIENT INTERROTTO *** \n" );
+	if ( ingame == 1 )
+		free( opponent_username );
+	free(my_username);
 	kill( getpid(), 15 );
 }
 
@@ -92,6 +95,7 @@ int set_pkt( int* cmd_id, char* string_msg, int* n1, int* n2, char* ip ) {
 		ret += sizeof(int);
 	if ( ip != NULL )
 		ret += INET_ADDRSTRLEN;
+	free(cmd_buffer);
 	cmd_buffer = malloc( ret );
 	buff_pointer = cmd_buffer;
 	insert_buff( cmd_id, sizeof(int)); 
@@ -132,7 +136,7 @@ void send_cmd( int* size, int TCP_UDP ) {
 		return;
 	}
 	//printf( "[DEBUG] bytes inviati %d \n", ret );
-	free(cmd_buffer);
+
 }
 
 int recv_response(int TCP_UDP ) {
@@ -154,6 +158,8 @@ int recv_response(int TCP_UDP ) {
 		printf( "[ERRORE] Dimensione comando via TCP_UDP %d\n", TCP_UDP);
 		return -1;
 	}
+
+	free(cmd_buffer);
 	cmd_buffer = malloc( cmd_size );
 
 	if ( TCP_UDP == 0 )
@@ -257,7 +263,7 @@ int main( int  argc, char** argv) {
 		exit(1);
 	}
 
-    int opponent_rtp, ingame, turn, i, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_port;
+    int opponent_rtp, turn, i, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_port;
 	int square[2];
 	char* cmd_name;
 	char* square_string;
@@ -270,7 +276,6 @@ int main( int  argc, char** argv) {
 	FD_ZERO(&read_fds);
 
 	signal( SIGINT, catch_stop );
-	signal( SIGSTOP, catch_stop );
     signal( SIGQUIT, catch_stop );
 	memset( &server_addr, 0, sizeof( server_addr ));
    
@@ -292,19 +297,21 @@ int main( int  argc, char** argv) {
 	do {
 		if ( ret == -1 )
 			printf( "Username gia' presente nel server \n");
-		if ( portUDP < 1024 || portUDP > 65536 )
-			printf( "Porta non esistente ( intervallo porte [1024,65536] )\n");
 		printf( "Inserisci il tuo nome: " );
 		scanf( "%s" , read_buffer );
 		printf( "Inserisci la porta UDP di ascolto: ");
 		scanf( "%d", &portUDP );
+		if ( portUDP < 1024 || portUDP > 65535 ) {
+			printf( "Porta non esistente ( intervallo porte [1024,65535] )\n");
+			continue;
+		}
 		cmd_id = 0;
 		ret = set_pkt( &cmd_id, read_buffer, &portUDP, NULL, NULL );
 		send_cmd( &ret,0);
-		recv_response( 0  );
+		recv_response( 0 );
 		ret = extract_int( cmd_buffer, 0);
 	//	printf( "[DEBUG] risposta registrazione %d \n", ret );
-	} while ( ret == -1 ||  portUDP < 1024 || portUDP > 65535 );
+	} while ( ret == -1 || portUDP < 1024 || portUDP > 65535 );
 	
 	my_username = malloc( strlen( read_buffer ));
 	strcpy( my_username, read_buffer );
@@ -329,6 +336,7 @@ int main( int  argc, char** argv) {
 			ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
 			send_cmd( &ret, 0 );
 			ingame = 0;
+			free(opponent_username);
 			printf( " Disconnessione per inattivita'\n> ");
 			fflush(stdout);
 		} else {
@@ -354,6 +362,7 @@ int main( int  argc, char** argv) {
 							case 0:
 								if ( strcmp( cmd_name, QUIT ) == 0 ) {
 									printf( "[INFO] Disconnessione dal server \n" );
+									free(my_username);
 									close( server_fd );
 									return 0;
 								} 
@@ -387,6 +396,7 @@ int main( int  argc, char** argv) {
 									ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
 									send_cmd( &ret, 0 );
 									ingame = 0;
+									free(opponent_username);
 									printf( " Disconnessione avvenuta con successo: TI SEI ARRESO\n> ");
 								} else if ( strcmp( cmd_name, HELP ) == 0 ) 
 									printf( "%s# ", HELP_MSG_INGAME );
@@ -406,8 +416,7 @@ int main( int  argc, char** argv) {
 											ret = set_pkt( &cmd_id, NULL, &square[0], &square[1], NULL);
 											send_cmd( &ret, 1);
 										}
-									} else 
-										printf("# ");
+									} 
 								} else if ( strcmp( cmd_name, SHOW ) == 0 ) 
 									print_grid();		
 								else 
@@ -447,6 +456,7 @@ int main( int  argc, char** argv) {
 								char* list = malloc(list_size);
 								memcpy( list, cmd_buffer + 8, list_size);
 								printf( " Client connessi al server: %s \n> ", list);
+								free(list);
 								break;
 							case 2: // sei stato sfidato
 								username_size = extract_int( cmd_buffer, 4);
@@ -488,6 +498,7 @@ int main( int  argc, char** argv) {
 							case 4: // VITTORIA
 								printf( " `.`.`.`.` VITTORIA `.`.`.`.` \n Hai distrutto la flotta nemica!! \n> " );
 								ingame = 0;
+								free(opponent_username);
 								my_hits = opponent_hits = 0;
 								memset( &opponent_addr, 0, sizeof( opponent_addr ));
 								break;
@@ -541,6 +552,7 @@ int main( int  argc, char** argv) {
 								 	response_id = 4; // Vittoria
 								   	printf( " ....... SCONFITTA ....... \n %s ha distrutto la tua flotta :( \n> ", opponent_username );
 									ingame = 0;
+									free(opponent_username);
 									my_hits = opponent_hits = 0;
 									ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
 									send_cmd( &ret, 0 ); 
