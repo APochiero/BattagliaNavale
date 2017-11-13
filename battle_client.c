@@ -266,6 +266,7 @@ int main( int  argc, char** argv) {
     int opponent_rtp, turn, i, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_port;
 	int square[2];
 	char* cmd_name;
+	char* list;
 	char* square_string;
 	char ip[INET_ADDRSTRLEN];
 	char y_n;
@@ -416,7 +417,8 @@ int main( int  argc, char** argv) {
 											ret = set_pkt( &cmd_id, NULL, &square[0], &square[1], NULL);
 											send_cmd( &ret, 1);
 										}
-									} 
+									} else 
+										printf( " Uso: !shot <casella> \n# ");
 								} else if ( strcmp( cmd_name, SHOW ) == 0 ) 
 									print_grid();		
 								else 
@@ -453,10 +455,10 @@ int main( int  argc, char** argv) {
 								break;
 							case 1: // risposta al comando !who contenente la lista di client connnessi
 								list_size = extract_int( cmd_buffer, 4);
-								char* list = malloc(list_size);
+								free( list );
+								list = malloc(list_size);
 								memcpy( list, cmd_buffer + 8, list_size);
 								printf( " Client connessi al server: %s \n> ", list);
-								free(list);
 								break;
 							case 2: // sei stato sfidato
 								username_size = extract_int( cmd_buffer, 4);
