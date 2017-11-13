@@ -50,6 +50,7 @@ char* cmd_buffer;
 char* buff_pointer;
 char* my_username;
 char* opponent_username;
+char* who_list;
 char read_buffer[READ_BUFFER_SIZE];
 struct sockaddr_in opponent_addr;
 struct timeval tv = {60, 0};   
@@ -266,7 +267,6 @@ int main( int  argc, char** argv) {
     int opponent_rtp, turn, i, fdmax, username_size, cmd_id, portUDP, ret,response_id, list_size, server_port;
 	int square[2];
 	char* cmd_name;
-	char* list;
 	char* square_string;
 	char ip[INET_ADDRSTRLEN];
 	char y_n;
@@ -455,10 +455,10 @@ int main( int  argc, char** argv) {
 								break;
 							case 1: // risposta al comando !who contenente la lista di client connnessi
 								list_size = extract_int( cmd_buffer, 4);
-								free( list );
-								list = malloc(list_size);
-								memcpy( list, cmd_buffer + 8, list_size);
-								printf( " Client connessi al server: %s \n> ", list);
+								free( who_list );
+								who_list = malloc(list_size);
+								memcpy( who_list, cmd_buffer + 8, list_size);
+								printf( " Client connessi al server: %s \n> ", who_list);
 								break;
 							case 2: // sei stato sfidato
 								username_size = extract_int( cmd_buffer, 4);
