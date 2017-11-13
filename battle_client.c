@@ -35,7 +35,7 @@
 
 #define HELP_MSG "Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili \n  !who --> mostra l'elenco dei client connessi al server \n  !connect username --> avvia una partita con l'utente username \n  !quit --> disconnette il client dal server\n\n\0"
 
-#define HELP_MSG_INGAME "Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili\n  !disconnect --> disconnette il client dall'attuale partita\n  !shot square --> fai un tentativo con la casella square\n  !show --> visuallizza griglia di gioco\n\n\0"
+#define HELP_MSG_INGAME "Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili\n  !disconnect --> disconnette il client dall'attuale partita\n  !shot square --> fai un tentativo con la casella square\n  !show --> visualizza griglia di gioco\n\n\0"
 
 enum cell_t  { BUSY, FREE, HIT, MISS };
 
@@ -341,7 +341,8 @@ int main( int  argc, char** argv) {
 			printf( " Disconnessione per inattivita'\n> ");
 			fflush(stdout);
 		} else {
-			tv.tv_sec = 60;
+			int random = rand()%10 ;
+			tv.tv_sec = 55+random;
 			tv.tv_usec = 0;
 			for( i = 0; i <= fdmax; i++ ) {
 				if ( FD_ISSET( i, &read_fds ) ) {
@@ -458,7 +459,7 @@ int main( int  argc, char** argv) {
 								free( who_list );
 								who_list = malloc(list_size);
 								memcpy( who_list, cmd_buffer + 8, list_size);
-								printf( " Client connessi al server: %s \n> ", who_list);
+								printf( " Client connessi al server: \n\t%s \n> ", who_list);
 								break;
 							case 2: // sei stato sfidato
 								username_size = extract_int( cmd_buffer, 4);
@@ -575,7 +576,7 @@ int main( int  argc, char** argv) {
 					}
 				}
 			}
-		}
+		} 
 	}
 	return 0;
 }

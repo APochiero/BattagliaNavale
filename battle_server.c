@@ -26,8 +26,8 @@ struct client_t {
 };
 
 char* ip_addr = "127.0.0.1";
-const char* disponibile = "( libero )";
-const char* non_disponibile = "( in partita )";
+const char* disponibile = " ( libero )\n\t";
+const char* non_disponibile = " ( in partita )\n\t";
 struct client_t* clients = NULL;
 int listener;
 char* buff_pointer;
@@ -106,22 +106,24 @@ char* print_clients() {
     struct client_t* i;
 	int string_size = 0;
 	for ( i = clients; i->next != NULL; i = i-> next ) {
-		string_size += strlen( i->username ) + 15; 
+		string_size += strlen( i->username ) + 1; 
 		if ( i->ingame == 1 )
 			string_size += strlen( non_disponibile );
 		else
 			string_size += strlen( disponibile );
+	//	printf( "[DEBUG] %s dimesione %d \n", i->username, strlen(i->username) );
 	}
+	free( printed_clients );
 	printed_clients = malloc(string_size);
+	memset( printed_clients, 0, string_size );
 	for ( i = clients; i->next != NULL; i = i->next ) {
-		strcat( printed_clients, "\n\t");
        	strcat( printed_clients, i->username );
-		strcat( printed_clients, " ");
         if ( i->ingame ) 
             strcat(printed_clients, non_disponibile );
         else 
             strcat( printed_clients, disponibile );
     }
+//	printf("[DEBUG] %s \n %d ", printed_clients, string_size ); 
 	return printed_clients;
 }
 
@@ -321,11 +323,12 @@ int main( int argc, char** argv ) {
 							}		
 							switch( cmd_id ) {
 								case -2: // utente disconnesso
+									if ( client_i->ingame == 0 ) // disconnessione contemporanea dei client
+										break;
 									c_pointer = get_client( client_i->opponent_username );
 									client_i->ingame = 0;
 									disconnect( c_pointer->username );
 									printf( " %s e' libero \n", c_pointer->username ); 
-									free( client_i->opponent_username );
 									break;
 								case -1: // l'utente attuale ha rifiutato la sfida
 									response_id = -1;
@@ -350,7 +353,6 @@ int main( int argc, char** argv ) {
 								    response_id = 1;
 									ret = set_pkt( &response_id, print_clients(), NULL, NULL);
 									send_response( client_i->fd, &ret );
-									free(printed_clients);
 									break;		    				
 				  		    	case 2: // !connect username
 									response_id = check_user_status(username );
