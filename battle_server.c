@@ -243,7 +243,7 @@ int recv_cmd(int fd) {
 
 int main( int argc, char** argv ) {
 	if ( argc != 2 ) {
-		printf( "[ERRORE] Uso: ./battle_server.exe <porta> \n");
+		printf( "[ERRORE] Uso: ./battle_server <porta> \n");
 		exit(1);
 	}
 
@@ -271,12 +271,12 @@ int main( int argc, char** argv ) {
 
 	ret = bind( listener, (struct sockaddr*) &server_addr, sizeof(server_addr));
 	if ( ret == -1 ) {
-		perror( "[ERRORE] Binding \n" );
+		perror( "[ERRORE] Binding fallito \n" );
 		exit(1);
 	} 
-	ret = listen(listener, 10 );
+	ret = listen( listener, 10 );
 	if( ret == -1  ) {
-		perror("[ERRORE] Listening \n");
+		perror("[ERRORE] Listening fallito \n");
 		exit(1);
 	}
 	printf( " Indirizzo %s (Porta: %d) \n\n", ip_addr, port );   

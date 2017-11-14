@@ -260,7 +260,7 @@ void print_grid() {
 
 int main( int  argc, char** argv) {
 	if ( argc != 3 ) {
-		printf( "[ERRORE] Uso: ./battle_client.exe <host remoto> <porta> \n");
+		printf( "[ERRORE] Uso: ./battle_client <host remoto> <porta> \n");
 		exit(1);
 	}
 
@@ -288,7 +288,7 @@ int main( int  argc, char** argv) {
 
     ret = connect( server_fd, (struct sockaddr* ) &server_addr, sizeof( server_addr ));
     if ( ret == -1 ) {
-        perror( "[ERRORE] Connessione al server \n");
+        perror( "[ERRORE] Connessione al server fallita, controllare indirizzo IP e la porta inserite\n");
         exit(1);
     }
  	FD_SET(server_fd, &master);
