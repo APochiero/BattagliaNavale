@@ -33,9 +33,9 @@
 #define SHOT "!shot\0"
 #define SHOW "!show\0"
 
-#define HELP_MSG "Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili \n  !who --> mostra l'elenco dei client connessi al server \n  !connect username --> avvia una partita con l'utente username \n  !quit --> disconnette il client dal server\n\n\0"
+#define HELP_MSG " Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili \n  !who --> mostra l'elenco dei client connessi al server \n  !connect username --> avvia una partita con l'utente username \n  !quit --> disconnette il client dal server\n\n\0"
 
-#define HELP_MSG_INGAME "Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili\n  !disconnect --> disconnette il client dall'attuale partita\n  !shot square --> fai un tentativo con la casella square\n  !show --> visualizza griglia di gioco\n\n\0"
+#define HELP_MSG_INGAME " Sono disponibili i seguenti comandi:\n  !help --> mostra l'elenco dei comandi disponibili\n  !disconnect --> disconnette il client dall'attuale partita\n  !shot square --> fai un tentativo con la casella square\n  !show --> visualizza griglia di gioco\n\n\0"
 
 enum cell_t  { BUSY, FREE, HIT, MISS };
 
@@ -288,7 +288,7 @@ int main( int  argc, char** argv) {
 
     ret = connect( server_fd, (struct sockaddr* ) &server_addr, sizeof( server_addr ));
     if ( ret == -1 ) {
-        perror( "[ERRORE] Connessione al server fallita, controllare indirizzo IP e la porta inserite\n");
+        perror( "[ERRORE] Connessione al server fallita, controllare indirizzo IP e numero di porta\n");
         exit(1);
     }
  	FD_SET(server_fd, &master);
@@ -304,6 +304,7 @@ int main( int  argc, char** argv) {
 		scanf( "%d", &portUDP );
 		if ( portUDP < 1024 || portUDP > 65535 ) {
 			printf( "Porta non esistente ( intervallo porte [1024,65535] )\n");
+			ret = 0;
 			continue;
 		}
 		cmd_id = 0;
@@ -344,6 +345,7 @@ int main( int  argc, char** argv) {
 			int random = rand()%10 ;
 			tv.tv_sec = 55+random;
 			tv.tv_usec = 0;
+			memset( read_buffer, 0, READ_BUFFER_SIZE );
 			for( i = 0; i <= fdmax; i++ ) {
 				if ( FD_ISSET( i, &read_fds ) ) {
 /******	*********** LETTURA COMANDI **************************/
@@ -351,17 +353,13 @@ int main( int  argc, char** argv) {
 						fgets( read_buffer, READ_BUFFER_SIZE, stdin );
 						char *rmv_newline = strchr( read_buffer, '\n');
 						*rmv_newline = ' ';
-						strcat( read_buffer, delimiter);
-						cmd_name = strtok( read_buffer, delimiter);	
-						if ( cmd_name == '\0' && ingame == 0 ) {
-							printf("> ");
-							break;
-						} else if ( cmd_name == '\0' && ingame == 1 ) {
-							printf("# ");
-							break;
-						}
+						cmd_name = strtok( read_buffer, delimiter );
 						switch ( ingame ) {
 							case 0:
+								if ( cmd_name == NULL) {
+									printf( "> ");
+									break;
+								}
 								if ( strcmp( cmd_name, QUIT ) == 0 ) {
 									printf( "[INFO] Disconnessione dal server \n" );
 									free(my_username);
@@ -377,11 +375,13 @@ int main( int  argc, char** argv) {
 								} else if ( strcmp( cmd_name, CONNECT ) == 0 ) {
 									cmd_id = 2;
 									char* tmp = strtok( NULL, delimiter );
+									if ( tmp  == NULL ) {
+										printf( "Uso: !connect <username> \n> ");
+										break;
+									}
 									opponent_username = malloc( strlen( tmp) );
 									strcpy( opponent_username, tmp );
-									if ( opponent_username == NULL ) 
-										printf( "Uso: !connect <username> \n> ");
-									else if ( strcmp( opponent_username, my_username ) == 0 ) 
+									if ( strcmp( opponent_username, my_username ) == 0 ) 
 										printf( " Specificare un username diverso dal proprio \n> " );
 								 	else {
 										printf( " In attesa di %s... \n", opponent_username );
@@ -392,6 +392,10 @@ int main( int  argc, char** argv) {
 									printf(" Comando non riconosciuto \n> " );
 								break;
 							case 1:
+								if ( cmd_name == 0 ) {
+									printf("# ");
+									break;
+								}
 								if ( strcmp( cmd_name, DISCONNECT ) == 0 ) {
 									cmd_id = -2; // resa 
 									//printf("[DEBUG] opponent_username %s \n", opponent_username );
@@ -437,6 +441,10 @@ int main( int  argc, char** argv) {
 	
 						response_id = extract_int( cmd_buffer, 0);
 						switch( response_id ) { 
+							case -6: // disconnessione sfidante mentre lo sfidato decideva se accettare o meno
+								printf( " %s non e' piu' disponibile a giocare \n> ", opponent_username  ); 
+								free( opponent_username );
+								break;
 							case -5: // l'avversario si e' disconnesso
 								ingame = 0;
 								memset( &opponent_addr, 0, sizeof( opponent_addr ));

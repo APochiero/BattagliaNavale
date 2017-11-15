@@ -204,6 +204,12 @@ void remove_client( int fd ) {
 void send_response( int client_fd, int* size ) {
 	int ret;
 	ret = send( client_fd, (void*) size, sizeof(int), 0 ); //invio dimensione pacchetto
+	if ( ret < 0 ) { 
+	 	printf( "[ERRORE] Invio fallito " );
+		remove_client( client_fd );
+		FD_CLR( client_fd, &master );
+		return ;
+	}
 	if ( ret < sizeof(int) ) {
 		printf("[ERRORE] Invio dimensione comando \n");
 		return;
@@ -331,9 +337,13 @@ int main( int argc, char** argv ) {
 									printf( " %s e' libero \n", c_pointer->username ); 
 									break;
 								case -1: // l'utente attuale ha rifiutato la sfida
+									c_pointer = get_client( username );
+									if ( c_pointer == NULL ) {
+										client_i->under_request = 0;
+										break;
+									}
 									response_id = -1;
 									ret = set_pkt( &response_id, username, NULL, NULL);
-									c_pointer = get_client( username );
 									c_pointer->under_request = 0;
 									client_i->under_request = 0;
 									send_response( c_pointer->fd, &ret );
@@ -369,6 +379,14 @@ int main( int argc, char** argv ) {
 									break;
 								case 3: // sfida accettata | sfidato
 									c_pointer = get_client( username );
+									if ( c_pointer == NULL ) { // lo sfidante si e' disconnesso mentre lo sfidato rispondeva alla sfida
+										client_i->under_request = 0;
+										response_id = -6;
+										ret = set_pkt( &response_id, NULL, NULL, NULL );
+										send_response( client_i->fd, &ret );
+										break;
+									}
+										
 									port = client_i->portUDP;
 									inet_ntop( AF_INET, &(client_i->addr.sin_addr), ip, INET_ADDRSTRLEN);	
 									
