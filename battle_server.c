@@ -89,7 +89,7 @@ int check_user_status( char* username ) {
 			return 0; // giocatore libero
 		}
 	}
-	return -2; // giocatore insesistente
+	return -2; // giocatore inesistente
 }
 
 int check_user_presence( char* username ) {
@@ -186,6 +186,7 @@ void remove_client( int fd ) {
 			int id = -6;
 			int ret = set_pkt( &id, NULL, NULL, NULL );
 			send_response( user->fd, &ret );
+			user->under_request = 0;
 			free( previous->opponent_username );
 		}
 		close( previous->fd );
@@ -206,6 +207,7 @@ void remove_client( int fd ) {
 				int id = -6;
 				int ret = set_pkt( &id, NULL, NULL, NULL  );
 				send_response( user->fd, &ret );
+				user->under_request = 0;
 			    free( current->opponent_username );
 			}
 			close( current->fd );
@@ -369,7 +371,7 @@ int main( int argc, char** argv ) {
 								case 0: // ricezione username e porta UDP 
 									client_i->portUDP = extract_int(8 + username_size );
 									response_id =  check_user_presence( username );
-						        	if ( response_id == 0 ) {
+						        	if ( response_id == 0 ) { // username libera
 										client_i->username = malloc( username_size );
 										strcpy( client_i->username,	username);
 										printf( " %s si e' connesso\n %s e' libero \n", client_i->username, client_i->username );

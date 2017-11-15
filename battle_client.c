@@ -296,13 +296,13 @@ int main( int  argc, char** argv) {
     printf( "[INFO] Connessone al server %s ( porta %d ) avvenuta con successo \n\n%s", argv[1], server_port, HELP_MSG );
 	portUDP = 4444;
 	do {
-		if ( ret == -1 )
+		if ( ret == -1 ) // ricezione dal server che l'username e' gia' in uso
 			printf( "Username gia' presente nel server \n");
 		printf( "Inserisci il tuo nome: " );
 		scanf( "%s" , read_buffer );
 		printf( "Inserisci la porta UDP di ascolto: ");
 		scanf( "%d", &portUDP );
-		if ( portUDP < 1024 || portUDP > 65535 ) {
+		if ( portUDP < 1024 || portUDP > 65535 ) { // well-known port numbers 
 			printf( "Porta non esistente ( intervallo porte [1024,65535] )\n");
 			ret = 0;
 			continue;
@@ -333,7 +333,7 @@ int main( int  argc, char** argv) {
 	for( ;; ) {
 		read_fds = master;
 		ret = select( fdmax + 1, &read_fds, NULL, NULL, &tv );
-		if ( ret == 0 && ingame == 1  ) {
+		if ( ret == 0 && ingame == 1  ) { // Scadenza timeout durante la partita 
 			cmd_id = -2; 
 			ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL ); 
 			send_cmd( &ret, 0 );
@@ -386,7 +386,7 @@ int main( int  argc, char** argv) {
 								 	else {
 										printf( " In attesa di %s... \n", opponent_username );
 										ret = set_pkt( &cmd_id, opponent_username, NULL, NULL, NULL ); 
-										send_cmd(&ret, 0);
+										send_cmd(&ret, 0); 
 									}
 								} else 
 									printf(" Comando non riconosciuto \n> " );
@@ -414,10 +414,10 @@ int main( int  argc, char** argv) {
 										printf( " %s non e' ancora pronto\n# ", opponent_username );
 									else if ( turn == 0 ) 
 										printf(" Attendi il tuo turno \n# " ); 
-									else if ( get_square(square_string, square) == 0 ) {
+									else if ( get_square(square_string, square) == 0 ) { // lettura casella ok 
 										if ( opponent_grid[square[0]][square[1]] == HIT || opponent_grid[square[0]][square[1]] == MISS ) 
 											printf( " Hai gia' sparato questa casella \n# " );
-										else {
+										else { // casella ancora non sparata
 											cmd_id = 2;
 											ret = set_pkt( &cmd_id, NULL, &square[0], &square[1], NULL);
 											send_cmd( &ret, 1);
@@ -441,7 +441,7 @@ int main( int  argc, char** argv) {
 	
 						response_id = extract_int( cmd_buffer, 0);
 						switch( response_id ) { 
-							case -6: // disconnessione sfidante mentre lo sfidato decideva se accettare o meno
+							case -6: // disconnessione di un giocatore mentre si sta richiedendo una partita ( lo sfidato decide se accettare o meno )
 								printf( " %s non e' piu' disponibile a giocare \n> ", opponent_username  ); 
 								free( opponent_username );
 								break;
@@ -488,6 +488,7 @@ int main( int  argc, char** argv) {
 								break;
 							case 3: // l'utente sfidato ha accettato la partita
 								printf( " %s ha accettato la partita \n", opponent_username );
+								// estrazione informazioni sull'avversario e creazione sockaddr 
 								memset( &opponent_addr, 0, sizeof( opponent_addr ));
 								opponent_addr.sin_family = AF_INET;
 								opponent_addr.sin_port = htons( extract_int( cmd_buffer,  4 ));
@@ -496,14 +497,14 @@ int main( int  argc, char** argv) {
 								inet_pton( AF_INET, ip, &opponent_addr.sin_addr );	
 								cmd_id = 0; // presentazione 
 								ret = set_pkt( &cmd_id, NULL, &portUDP, NULL ,NULL );
-								send_cmd( &ret, 1 );
+								send_cmd( &ret, 1 );  // Invio primo pacchetto UDP di presentazione allo sfidato
 								printf( " \n ### PARTITA CONTRO %s INIZIATA ### \n", opponent_username);
 								ingame = 1;
 								set_tokens();
 								cmd_id = 1; // ready_to_play
 								turn = 0;// lo sfidante inizia per secondo
 								ret = set_pkt( &cmd_id, NULL, NULL, NULL, NULL); 
-								send_cmd( &ret, 1 );
+								send_cmd( &ret, 1 ); // Invio rtp allo sfidato
 								printf( "\n# ");
 								break;
 							case 4: // VITTORIA
@@ -534,7 +535,7 @@ int main( int  argc, char** argv) {
 								response_id = ingame = turn = 1; // rtp / in partita / lo sfidato inizia prima
 								set_tokens();
 								ret = set_pkt( &response_id, NULL, NULL, NULL, NULL ); 
-								send_cmd( &ret, 1);
+								send_cmd( &ret, 1); // Invio rtp allo sfidante
 								break;
 							case 1:
 								printf(" %s ha posizionato le sue navi ed e' pronto a giocare \n", opponent_username );
