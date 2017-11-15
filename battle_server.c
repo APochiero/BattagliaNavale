@@ -180,6 +180,14 @@ void remove_client( int fd ) {
 		printf(" %s ha interrotto la connessione \n", previous->username );
 		if ( previous->ingame == 1 ) 
 			disconnect( previous->opponent_username);
+		else if ( previous->under_request == 1 ) {
+			printf( " %s ", previous->opponent_username );
+			struct client_t* user = get_client( previous->opponent_username );
+			int id = -6;
+			int ret = set_pkt( &id, NULL, NULL, NULL );
+			send_response( user->fd, &ret );
+			free( previous->opponent_username );
+		}
 		close( previous->fd );
 		free( previous );
 		return;
@@ -192,6 +200,14 @@ void remove_client( int fd ) {
 			printf(" %s ha interrotto la connessione \n", current->username );
 			if ( current->ingame == 1 ) 
 				disconnect( current->opponent_username);
+			else if ( current->under_request == 1 ) {
+				printf( " %s ", current->opponent_username );
+				struct client_t* user = get_client( current->opponent_username );
+				int id = -6;
+				int ret = set_pkt( &id, NULL, NULL, NULL  );
+				send_response( user->fd, &ret );
+			    free( current->opponent_username );
+			}
 			close( current->fd );
 			free( current );
 			return;
@@ -336,7 +352,7 @@ int main( int argc, char** argv ) {
 									disconnect( c_pointer->username );
 									printf( " %s e' libero \n", c_pointer->username ); 
 									break;
-								case -1: // l'utente attuale ha rifiutato la sfida
+								case -1: // l'utente ha rifiutato la sfida
 									c_pointer = get_client( username );
 									if ( c_pointer == NULL ) {
 										client_i->under_request = 0;
@@ -346,6 +362,8 @@ int main( int argc, char** argv ) {
 									ret = set_pkt( &response_id, username, NULL, NULL);
 									c_pointer->under_request = 0;
 									client_i->under_request = 0;
+									free(client_i->opponent_username);
+									free( c_pointer->opponent_username );
 									send_response( c_pointer->fd, &ret );
 									break;
 								case 0: // ricezione username e porta UDP 
@@ -373,6 +391,12 @@ int main( int argc, char** argv ) {
 									c_pointer = get_client( username );
 									c_pointer->under_request = 1;
 									client_i->under_request = 1;
+									client_i->opponent_username = malloc( strlen(username) );
+									strcpy( client_i->opponent_username, username );
+
+									c_pointer->opponent_username = malloc( strlen(client_i->username) );
+									strcpy( c_pointer->opponent_username, client_i->username );
+								
 									response_id = 2;
 									ret = set_pkt( &response_id, client_i->username, NULL, NULL); // invio sfida con il nome dello sfidante
 									send_response( c_pointer->fd, &ret );
@@ -389,13 +413,7 @@ int main( int argc, char** argv ) {
 										
 									port = client_i->portUDP;
 									inet_ntop( AF_INET, &(client_i->addr.sin_addr), ip, INET_ADDRSTRLEN);	
-									
-									c_pointer->opponent_username = malloc( strlen(client_i->username) );
-									strcpy( c_pointer->opponent_username, client_i->username );
-									
-									client_i->opponent_username = malloc( strlen(username) );
-									strcpy( client_i->opponent_username, username );
-									
+																	
 									c_pointer->under_request = 0;
 									client_i->under_request = 0;
 									c_pointer->ingame = 1; //sfidante "in partita"
